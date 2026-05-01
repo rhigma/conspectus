@@ -1,0 +1,28 @@
+[Unit]
+Description=Persönlicher KI-Assistent Backend
+After=network.target
+
+[Service]
+Type=simple
+User=assistant
+WorkingDirectory=/opt/ki-assistent
+ExecStart=/usr/bin/node src/server.js
+Restart=always
+RestartSec=10
+
+# Umgebung
+EnvironmentFile=/opt/ki-assistent/.env
+
+# Sicherheit – minimale Rechte
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/ki-assistent/data
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ki-assistent
+
+[Install]
+WantedBy=multi-user.target

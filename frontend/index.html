@@ -1,0 +1,2004 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Conspectus · Schulleitung</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --ink:#1a1614;--ink2:#4a443f;--ink3:#8a817a;
+  --paper:#f5f0ea;--paper2:#ede7df;--paper3:#e2d9cf;
+  --accent:#8b3a1a;--accent2:#c4622d;--accentl:#f5ddd0;
+  --green:#2d5a3d;--greenl:#d4ead9;
+  --blue:#1a3a5c;--bluel:#d0dff0;
+  --gold:#8a6a1a;--goldl:#f5ecd0;
+  --border:#cdc4b8;--border2:#b8ada0;
+  --r:4px;
+  --shadow:0 2px 8px rgba(26,22,20,.12);
+  --shadow2:0 4px 20px rgba(26,22,20,.18);
+}
+html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans',sans-serif;overflow:hidden}
+
+/* ── LOGIN ── */
+#login{position:fixed;inset:0;background:var(--ink);display:flex;align-items:center;justify-content:center;z-index:500}
+.login-inner{width:340px;padding:48px 40px;background:var(--paper);border-radius:2px}
+.login-wordmark{font-family:'Playfair Display',serif;font-size:22px;color:var(--ink);margin-bottom:4px;letter-spacing:-.02em}
+.login-sub{font-size:11px;color:var(--ink3);font-family:'IBM Plex Mono',monospace;letter-spacing:.08em;text-transform:uppercase;margin-bottom:32px}
+.lf label{display:block;font-size:10px;font-family:'IBM Plex Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);margin-bottom:6px}
+.lf input{width:100%;padding:10px 12px;background:var(--paper2);border:1px solid var(--border);border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--ink);outline:none;transition:border-color .15s}
+.lf input:focus{border-color:var(--accent)}
+.lf{margin-bottom:16px}
+.login-btn{width:100%;padding:12px;margin-top:8px;background:var(--accent);border:none;border-radius:var(--r);color:#fff;font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:500;cursor:pointer;letter-spacing:.04em;transition:background .15s}
+.login-btn:hover{background:var(--accent2)}
+#login-err{font-size:11px;color:var(--accent);margin-top:10px;min-height:14px;font-family:'IBM Plex Mono',monospace}
+
+/* ── APP SHELL ── */
+#app{display:none;grid-template-columns:260px 1fr;grid-template-rows:52px 1fr;height:100vh}
+#app.on{display:grid}
+
+/* TOPBAR */
+.topbar{grid-column:1/-1;display:flex;align-items:center;padding:0 20px;gap:16px;background:var(--ink);border-bottom:1px solid #333}
+.wordmark{font-family:'Playfair Display',serif;font-size:17px;color:var(--paper);letter-spacing:-.01em}
+.wordmark span{color:var(--accent2);font-style:italic}
+.top-status{display:flex;align-items:center;gap:6px;font-size:10px;color:#888;font-family:'IBM Plex Mono',monospace;margin-left:auto}
+.sdot{width:6px;height:6px;border-radius:50%;background:#4a9;animation:pulse 2s infinite}
+.sdot.err{background:#c44;animation:none}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.top-btn{padding:5px 12px;background:none;border:1px solid #444;border-radius:var(--r);color:#888;font-family:'IBM Plex Mono',monospace;font-size:10px;cursor:pointer;transition:all .15s;letter-spacing:.04em}
+.top-btn:hover{border-color:var(--accent2);color:var(--accent2)}
+
+/* SIDEBAR */
+.sidebar{background:var(--paper2);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.nav-section{padding:16px 0 8px}
+.nav-label{font-size:9px;font-family:'IBM Plex Mono',monospace;letter-spacing:.15em;text-transform:uppercase;color:var(--ink3);padding:0 18px;margin-bottom:6px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:8px 18px;cursor:pointer;font-size:12px;color:var(--ink2);transition:all .12s;border-left:3px solid transparent;font-family:'IBM Plex Sans',sans-serif}
+.nav-item:hover{color:var(--ink);background:var(--paper3)}
+.nav-item.active{color:var(--accent);border-left-color:var(--accent);background:var(--accentl)}
+.nav-icon{width:16px;text-align:center;font-size:13px;opacity:.7}
+.sidebar-divider{height:1px;background:var(--border);margin:8px 18px}
+
+/* STATS MINI */
+.sidebar-stats{padding:12px 18px;display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.sstat{background:var(--paper3);border-radius:var(--r);padding:8px 10px;border:1px solid var(--border)}
+.sstat-n{font-family:'Playfair Display',serif;font-size:20px;color:var(--accent);line-height:1}
+.sstat-l{font-size:9px;font-family:'IBM Plex Mono',monospace;color:var(--ink3);text-transform:uppercase;letter-spacing:.08em;margin-top:2px}
+
+/* SYNC FOOTER */
+.sync-footer{margin-top:auto;padding:12px 18px;border-top:1px solid var(--border)}
+.sync-time{font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace;margin-bottom:6px}
+.sync-btn{width:100%;padding:7px;background:none;border:1px solid var(--border2);border-radius:var(--r);color:var(--ink2);font-family:'IBM Plex Mono',monospace;font-size:10px;cursor:pointer;transition:all .15s;letter-spacing:.04em}
+.sync-btn:hover{border-color:var(--accent);color:var(--accent)}
+
+/* MAIN */
+.main{display:flex;flex-direction:column;overflow:hidden;background:var(--paper)}
+
+/* VIEWS */
+.view{display:none;flex:1;overflow:hidden;flex-direction:column}
+.view.active{display:flex}
+
+/* ── DASHBOARD ── */
+#v-dash{overflow-y:auto;padding:28px;gap:20px}
+#v-dash::-webkit-scrollbar{width:4px}
+#v-dash::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+.dash-header{display:flex;align-items:baseline;gap:12px;margin-bottom:24px}
+.dash-title{font-family:'Playfair Display',serif;font-size:28px;color:var(--ink);letter-spacing:-.02em}
+.dash-date{font-size:11px;color:var(--ink3);font-family:'IBM Plex Mono',monospace}
+.dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+
+/* CARDS */
+.card{background:#fff;border:1px solid var(--border);border-radius:var(--r);padding:18px;box-shadow:var(--shadow)}
+.card.wide{grid-column:1/-1}
+.card-header{display:flex;align-items:center;gap:8px;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--paper3)}
+.card-title{font-family:'IBM Plex Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink2);flex:1}
+.card-count{font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace}
+
+/* BRIEFING */
+.briefing-text{font-size:13px;line-height:1.75;color:var(--ink2);white-space:pre-wrap}
+.briefing-text strong,.briefing-bold{color:var(--ink);font-weight:600}
+
+/* E-MAIL ROWS */
+.email-row{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--paper2);cursor:pointer;transition:background .1s;align-items:flex-start}
+.email-row:last-child{border-bottom:none}
+.email-row:hover{background:var(--paper2);margin:0 -8px;padding:8px 8px}
+.email-dot{width:6px;height:6px;border-radius:50%;margin-top:5px;flex-shrink:0;background:var(--border2)}
+.email-dot.unread{background:var(--accent2)}
+.email-meta{flex:1;min-width:0}
+.email-from{font-size:12px;font-weight:500;color:var(--ink);margin-bottom:1px}
+.email-subj{font-size:11px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.email-vorgang{font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace;margin-top:2px}
+.email-time{font-size:10px;color:var(--ink3);white-space:nowrap;font-family:'IBM Plex Mono',monospace}
+
+/* DELEGATIONEN ROWS */
+.deleg-row{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--paper2);align-items:flex-start}
+.deleg-row:last-child{border-bottom:none}
+.deleg-badge{font-size:9px;padding:2px 7px;border-radius:20px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap;flex-shrink:0}
+.deleg-badge.offen{background:var(--goldl);color:var(--gold)}
+.deleg-badge.ueberfaellig{background:var(--accentl);color:var(--accent)}
+.deleg-meta{flex:1;min-width:0}
+.deleg-aufgabe{font-size:12px;color:var(--ink);margin-bottom:2px}
+.deleg-info{font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace}
+.check-btn{width:22px;height:22px;border-radius:50%;border:1.5px solid var(--border2);background:none;cursor:pointer;flex-shrink:0;transition:all .15s;font-size:11px;color:transparent}
+.check-btn:hover{border-color:var(--green);color:var(--green);background:var(--greenl)}
+
+/* TERMINE */
+.termin-row{display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--paper2);align-items:flex-start}
+.termin-row:last-child{border-bottom:none}
+.termin-time{font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--ink3);min-width:36px;text-align:right;line-height:1.6}
+.termin-bar{width:2px;background:var(--blue);border-radius:2px;align-self:stretch;min-height:20px;flex-shrink:0}
+.termin-title{font-size:12px;color:var(--ink);margin-bottom:1px}
+.termin-sub{font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace}
+
+/* ── VORGÄNGE ── */
+#v-vorgaenge{overflow:hidden}
+.vorgaenge-toolbar{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;gap:10px;align-items:center;background:#fff}
+.vorgaenge-toolbar h2{font-family:'Playfair Display',serif;font-size:20px;flex:1}
+.search-input{padding:7px 12px;border:1px solid var(--border);border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:12px;background:var(--paper);outline:none;width:220px;transition:border-color .15s}
+.search-input:focus{border-color:var(--accent)}
+.filter-btn{padding:6px 12px;border:1px solid var(--border);border-radius:var(--r);background:var(--paper);font-family:'IBM Plex Mono',monospace;font-size:10px;cursor:pointer;transition:all .15s;letter-spacing:.04em;text-transform:uppercase;color:var(--ink2)}
+.filter-btn.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.new-vorgang-btn{padding:7px 14px;background:var(--accent);border:none;border-radius:var(--r);color:#fff;font-family:'IBM Plex Mono',monospace;font-size:11px;cursor:pointer;transition:background .15s;letter-spacing:.04em}
+.new-vorgang-btn:hover{background:var(--accent2)}
+
+.vorgaenge-list{flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:8px}
+.vorgaenge-list::-webkit-scrollbar{width:4px}
+.vorgaenge-list::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+
+.vorgang-card{background:#fff;border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;cursor:pointer;transition:all .15s;display:flex;gap:14px;align-items:flex-start}
+.vorgang-card:hover{border-color:var(--accent2);box-shadow:var(--shadow)}
+.vorgang-card.prio-1{border-left:3px solid var(--accent)}
+.vorgang-card.prio-2{border-left:3px solid var(--gold)}
+.vorgang-card.prio-3{border-left:3px solid var(--border2)}
+.vorgang-main{flex:1;min-width:0}
+.vorgang-titel{font-size:14px;font-weight:500;color:var(--ink);margin-bottom:4px;font-family:'IBM Plex Sans',sans-serif}
+.vorgang-meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.vtag{font-size:9px;padding:2px 7px;border-radius:20px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.06em}
+.vtag.personal{background:var(--accentl);color:var(--accent)}
+.vtag.behoerde{background:var(--bluel);color:var(--blue)}
+.vtag.veranstaltung{background:var(--greenl);color:var(--green)}
+.vtag.planung{background:var(--goldl);color:var(--gold)}
+.vtag.sonstiges{background:var(--paper3);color:var(--ink3)}
+.vtag.status{background:var(--paper2);color:var(--ink2)}
+.vorgang-deadline{font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace}
+.vorgang-deadline.ueberfaellig{color:var(--accent);font-weight:500}
+.vorgang-aside{text-align:right;flex-shrink:0}
+.vorgang-deleg-count{font-size:11px;color:var(--accent);font-family:'IBM Plex Mono',monospace}
+.vorgang-eintrag-count{font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace}
+
+/* ── VORGANG DETAIL ── */
+#v-detail{overflow:hidden}
+.detail-header{padding:16px 20px;border-bottom:1px solid var(--border);background:#fff;display:flex;gap:12px;align-items:flex-start}
+.back-btn{padding:5px 10px;background:none;border:1px solid var(--border);border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:10px;cursor:pointer;color:var(--ink2);transition:all .15s;flex-shrink:0;margin-top:4px}
+.back-btn:hover{border-color:var(--accent);color:var(--accent)}
+.detail-titel{font-family:'Playfair Display',serif;font-size:22px;flex:1;line-height:1.2}
+.detail-body{flex:1;overflow-y:auto;padding:20px;display:grid;grid-template-columns:1fr 340px;gap:16px;align-content:start}
+.detail-body::-webkit-scrollbar{width:4px}
+.detail-body::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+
+/* CHRONOLOGIE */
+.chronologie{display:flex;flex-direction:column;gap:0}
+.chron-item{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--paper2)}
+.chron-item:last-child{border-bottom:none}
+.chron-icon{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;margin-top:2px}
+.chron-icon.email{background:var(--bluel);color:var(--blue)}
+.chron-icon.notiz{background:var(--goldl);color:var(--gold)}
+.chron-icon.datei{background:var(--greenl);color:var(--green)}
+.chron-icon.delegation{background:var(--accentl);color:var(--accent)}
+.chron-icon.termin{background:var(--paper3);color:var(--ink2)}
+.chron-icon.ki_analyse{background:var(--ink);color:var(--paper)}
+.chron-content{flex:1;min-width:0}
+.chron-title{font-size:12px;font-weight:500;color:var(--ink);margin-bottom:3px}
+.chron-text{font-size:12px;color:var(--ink2);line-height:1.6;max-height:80px;overflow:hidden;position:relative}
+.chron-text.expanded{max-height:none}
+.chron-time{font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace;margin-top:4px}
+.expand-btn{font-size:10px;color:var(--accent);cursor:pointer;font-family:'IBM Plex Mono',monospace;background:none;border:none;padding:0;margin-top:3px}
+
+/* DETAIL SIDEBAR */
+.detail-sidebar{display:flex;flex-direction:column;gap:12px}
+
+/* ── CHAT ── */
+#v-chat{overflow:hidden}
+.chat-header{padding:12px 20px;border-bottom:1px solid var(--border);background:#fff;display:flex;align-items:center;gap:10px}
+.chat-header h2{font-family:'Playfair Display',serif;font-size:18px;flex:1}
+.model-tag{font-size:10px;padding:3px 8px;background:var(--paper2);border:1px solid var(--border);border-radius:20px;color:var(--ink3);font-family:'IBM Plex Mono',monospace}
+.messages{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:14px}
+.messages::-webkit-scrollbar{width:4px}
+.messages::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+.msg{display:flex;gap:10px;max-width:90%;animation:fadeUp .2s ease}
+@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.msg.u{align-self:flex-end;flex-direction:row-reverse}
+.av{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0;background:var(--paper3);border:1px solid var(--border);font-family:'IBM Plex Mono',monospace;color:var(--ink2)}
+.msg.u .av{background:var(--accentl);border-color:var(--accent);color:var(--accent)}
+.bubble{background:#fff;border:1px solid var(--border);border-radius:var(--r);padding:10px 14px;font-size:13px;line-height:1.65;color:var(--ink2);box-shadow:var(--shadow)}
+.msg.u .bubble{background:var(--paper2);border-color:var(--border2)}
+.bubble p{margin:0 0 7px}
+.bubble p:last-child{margin:0}
+.bubble strong{color:var(--ink);font-weight:600}
+.bubble code{font-family:'IBM Plex Mono',monospace;font-size:11px;background:var(--paper2);padding:2px 5px;border-radius:2px}
+.action-done{display:inline-flex;align-items:center;gap:5px;font-size:10px;padding:3px 9px;margin-top:6px;background:var(--greenl);border:1px solid var(--green);border-radius:20px;color:var(--green);font-family:'IBM Plex Mono',monospace}
+.typing-wrap{display:flex;gap:5px;padding:4px 0;align-items:center}
+.typing-wrap span{width:6px;height:6px;border-radius:50%;background:var(--ink3);animation:bounce .8s infinite}
+.typing-wrap span:nth-child(2){animation-delay:.15s}
+.typing-wrap span:nth-child(3){animation-delay:.3s}
+@keyframes bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-5px)}}
+
+.input-area{padding:14px 20px;border-top:1px solid var(--border);background:#fff}
+.quick-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.qbtn{padding:5px 11px;background:var(--paper);border:1px solid var(--border);border-radius:20px;color:var(--ink2);font-size:10px;cursor:pointer;font-family:'IBM Plex Mono',monospace;transition:all .12s;letter-spacing:.03em}
+.qbtn:hover{border-color:var(--accent);color:var(--accent)}
+.img-row{display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap}
+.img-thumb{position:relative;width:52px;height:52px}
+.img-thumb img{width:100%;height:100%;object-fit:cover;border-radius:var(--r);border:1px solid var(--border)}
+.img-rm{position:absolute;top:-4px;right:-4px;width:15px;height:15px;background:var(--accent);color:#fff;border-radius:50%;border:none;cursor:pointer;font-size:9px;line-height:15px;text-align:center}
+.input-row{display:flex;gap:8px;align-items:flex-end}
+.input-wrap{flex:1;background:var(--paper);border:1px solid var(--border);border-radius:var(--r);display:flex;align-items:flex-end;padding:8px 12px;gap:8px;transition:border-color .15s}
+.input-wrap:focus-within{border-color:var(--accent)}
+.input-wrap textarea{flex:1;background:none;border:none;outline:none;resize:none;color:var(--ink);font-family:'IBM Plex Sans',sans-serif;font-size:13px;line-height:1.5;min-height:20px;max-height:100px}
+.input-wrap textarea::placeholder{color:var(--ink3)}
+.icon-btn{background:none;border:none;cursor:pointer;color:var(--ink3);font-size:15px;padding:2px;transition:color .15s}
+.icon-btn:hover{color:var(--accent)}
+.send-btn{padding:10px 18px;background:var(--accent);color:#fff;border:none;border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:12px;cursor:pointer;transition:background .15s;letter-spacing:.04em}
+.send-btn:hover{background:var(--accent2)}
+.send-btn:disabled{opacity:.4;cursor:not-allowed}
+
+/* MODAL */
+.modal-bg{position:fixed;inset:0;background:rgba(26,22,20,.6);display:flex;align-items:center;justify-content:center;z-index:200;animation:fadeUp .2s}
+.modal{background:#fff;border:1px solid var(--border);border-radius:var(--r);padding:28px;width:440px;max-height:85vh;overflow-y:auto;box-shadow:var(--shadow2)}
+.modal h2{font-family:'Playfair Display',serif;font-size:20px;margin-bottom:20px;color:var(--ink)}
+.mf{margin-bottom:14px}
+.mf label{display:block;font-size:10px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.1em;color:var(--ink3);margin-bottom:5px}
+.mf input,.mf select,.mf textarea{width:100%;padding:9px 12px;background:var(--paper);border:1px solid var(--border);border-radius:var(--r);font-family:'IBM Plex Sans',sans-serif;font-size:13px;color:var(--ink);outline:none;transition:border-color .15s}
+.mf input:focus,.mf select:focus,.mf textarea:focus{border-color:var(--accent)}
+.mf textarea{resize:vertical;min-height:80px;font-family:'IBM Plex Sans',sans-serif}
+.modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
+.btn-c{padding:8px 16px;background:none;border:1px solid var(--border2);border-radius:var(--r);color:var(--ink2);cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.04em}
+.btn-s{padding:8px 16px;background:var(--accent);border:none;border-radius:var(--r);color:#fff;cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:500;letter-spacing:.04em}
+.btn-s:hover{background:var(--accent2)}
+
+/* TOAST */
+.toast{position:fixed;bottom:20px;right:20px;z-index:400;padding:10px 16px;background:var(--ink);color:var(--paper);border-radius:var(--r);font-size:12px;font-family:'IBM Plex Mono',monospace;animation:fadeUp .2s;box-shadow:var(--shadow2)}
+.toast.ok{background:var(--green)}
+.toast.err{background:var(--accent)}
+
+/* LOADING */
+.spin{width:14px;height:14px;border:2px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-row{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--ink3);padding:12px 0;font-family:'IBM Plex Mono',monospace}
+
+/* PRIO DOTS */
+.prio{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:6px}
+.prio.p1{background:var(--accent)}
+.prio.p2{background:var(--gold)}
+.prio.p3{background:var(--border2)}
+
+/* EMPTY */
+.empty{text-align:center;padding:40px 20px;color:var(--ink3);font-size:12px;font-family:'IBM Plex Mono',monospace}
+.empty-icon{font-size:28px;margin-bottom:10px}
+
+/* ── E-MAIL VIEW ── */
+#v-email{overflow:hidden}
+.email-view-header{padding:14px 20px;border-bottom:1px solid var(--border);background:#fff;display:flex;gap:10px;align-items:center}
+.email-view-body{flex:1;overflow:hidden;display:grid;grid-template-columns:1fr 320px}
+.email-main{overflow-y:auto;padding:24px;border-right:1px solid var(--border)}
+.email-main::-webkit-scrollbar{width:4px}
+.email-main::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+.email-from-block{margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--paper2)}
+.email-subject-line{font-family:'Playfair Display',serif;font-size:20px;color:var(--ink);margin-bottom:8px;line-height:1.3}
+.email-meta-line{font-size:11px;color:var(--ink3);font-family:'IBM Plex Mono',monospace;display:flex;gap:12px;flex-wrap:wrap}
+.email-body-text{font-size:13px;line-height:1.75;color:var(--ink2);white-space:pre-wrap;font-family:'IBM Plex Sans',sans-serif}
+.email-no-body{font-size:12px;color:var(--ink3);font-family:'IBM Plex Mono',monospace;padding:20px 0;font-style:italic}
+
+/* Antwort-Bereich */
+.reply-section{margin-top:24px;border-top:2px solid var(--paper3);padding-top:20px}
+.reply-label{font-size:10px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.1em;color:var(--ink3);margin-bottom:8px}
+.reply-textarea{width:100%;min-height:120px;padding:12px;border:1px solid var(--border);border-radius:var(--r);font-family:'IBM Plex Sans',sans-serif;font-size:13px;color:var(--ink);background:var(--paper);resize:vertical;outline:none;transition:border-color .15s;line-height:1.6}
+.reply-textarea:focus{border-color:var(--accent)}
+.reply-actions{display:flex;gap:8px;margin-top:8px;align-items:center}
+.reply-send-btn{padding:8px 18px;background:var(--accent);color:#fff;border:none;border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:11px;cursor:pointer;transition:background .15s;letter-spacing:.04em}
+.reply-send-btn:hover{background:var(--accent2)}
+.reply-send-btn:disabled{opacity:.4;cursor:not-allowed}
+.ki-entwurf-btn{padding:8px 14px;background:none;border:1px solid var(--border);border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:10px;cursor:pointer;color:var(--ink2);transition:all .15s;letter-spacing:.04em}
+.ki-entwurf-btn:hover{border-color:var(--accent);color:var(--accent)}
+
+/* E-Mail Sidebar */
+.email-sidebar{overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;background:var(--paper)}
+.email-sidebar::-webkit-scrollbar{width:4px}
+.email-sidebar::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+.email-action-card{background:#fff;border:1px solid var(--border);border-radius:var(--r);padding:14px}
+.email-action-title{font-size:10px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.1em;color:var(--ink3);margin-bottom:10px}
+.email-action-btn{width:100%;padding:8px 12px;margin-bottom:6px;background:var(--paper);border:1px solid var(--border);border-radius:var(--r);text-align:left;font-family:'IBM Plex Mono',monospace;font-size:11px;cursor:pointer;color:var(--ink2);transition:all .15s;letter-spacing:.03em}
+.email-action-btn:hover{border-color:var(--accent2);color:var(--accent);background:var(--accentl)}
+.email-action-btn:last-child{margin-bottom:0}
+.email-action-btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.email-action-btn.primary:hover{background:var(--accent2)}
+.ki-analyse-box{background:#fff;border:1px solid var(--border);border-radius:var(--r);padding:14px}
+.ki-analyse-text{font-size:12px;color:var(--ink2);line-height:1.65}
+.ki-analyse-text strong{color:var(--ink)}
+.vorgang-select{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:11px;background:var(--paper);color:var(--ink);outline:none;margin-bottom:6px}
+.vorgang-select:focus{border-color:var(--accent)}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login">
+  <div class="login-inner">
+    <div class="login-wordmark">Conspectus</div>
+    <div class="login-sub">Schulleitung</div>
+    <div class="lf"><label>API Secret</label><input type="password" id="ls" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"/></div>
+    <button class="login-btn" onclick="doLogin()">Anmelden →</button>
+    <div id="login-err"></div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <div class="topbar">
+    <div class="wordmark">Conspectus</div>
+    <div class="top-status">
+      <div class="sdot" id="sdot"></div>
+      <span id="stxt">verbunden</span>
+    </div>
+    <button class="top-btn" onclick="doSync()">↺ Sync</button>
+    <button class="top-btn" onclick="doBriefing()">☀ Briefing</button>
+    <button class="top-btn" onclick="doLogout()">Abmelden</button>
+  </div>
+
+  <div class="sidebar">
+    <div class="nav-section">
+      <div class="nav-label">Navigation</div>
+      <div class="nav-item active" id="n-dash" onclick="showView('dash')"><span class="nav-icon">⊞</span>Dashboard</div>
+      <div class="nav-item" id="n-vorgaenge" onclick="showView('vorgaenge')"><span class="nav-icon">◈</span>Vorgänge</div>
+      <div class="nav-item" id="n-chat" onclick="showView('chat')"><span class="nav-icon">◻</span>KI-Assistent</div>
+      <div class="nav-item" id="n-einstellungen" onclick="showView('einstellungen')"><span class="nav-icon">⚙</span>Einstellungen</div>
+    </div>
+    <div class="sidebar-divider"></div>
+    <div class="nav-label" style="padding:8px 18px 6px">Heute</div>
+    <div class="sidebar-stats" id="sidebar-stats">
+      <div class="sstat"><div class="sstat-n" id="ss-vorgaenge">–</div><div class="sstat-l">Vorgänge</div></div>
+      <div class="sstat"><div class="sstat-n" id="ss-delegationen">–</div><div class="sstat-l">Offen</div></div>
+      <div class="sstat"><div class="sstat-n" id="ss-unread">–</div><div class="sstat-l">Ungelesen</div></div>
+      <div class="sstat"><div class="sstat-n" id="ss-emails">–</div><div class="sstat-l">E-Mails</div></div>
+    </div>
+    <div class="sync-footer">
+      <div class="sync-time" id="sync-time">Letzter Sync: –</div>
+      <button class="sync-btn" onclick="doSync()">↺ Jetzt synchronisieren</button>
+    </div>
+  </div>
+
+  <div class="main">
+
+
+    <!-- DASHBOARD -->
+    <div class="view active" id="v-dash" style="overflow-y:auto;padding:24px 28px;display:flex;flex-direction:column;gap:14px">
+
+      <!-- Kopfzeile -->
+      <div style="display:flex;align-items:baseline;gap:12px">
+        <div style="font-family:'Playfair Display',serif;font-size:26px;color:var(--ink)" id="dash-greeting">Guten Morgen</div>
+        <div style="font-size:11px;color:var(--ink3);font-family:'IBM Plex Mono',monospace" id="dash-date"></div>
+        <div style="margin-left:auto;display:flex;gap:8px">
+          <span id="ss-unread" style="font-size:11px;color:var(--ink3);font-family:'IBM Plex Mono',monospace"></span>
+        </div>
+      </div>
+
+      <!-- Briefing -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">☀ Morgen-Briefing</span>
+          <button onclick="doBriefing()" style="font-size:10px;font-family:'IBM Plex Mono',monospace;background:none;border:1px solid var(--border);border-radius:var(--r);padding:3px 8px;cursor:pointer;color:var(--ink2)" id="briefing-reload">Neu laden</button>
+        </div>
+        <div class="briefing-text" id="briefing-text"><div class="loading-row"><div class="spin"></div>Lade Briefing…</div></div>
+      </div>
+
+      <!-- Delegationen (kompakt) + E-Mail nebeneinander -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">✉ Eingang</span>
+            <span class="card-count" id="email-count">–</span>
+            <button id="email-toggle" onclick="toggleEmailFilter()" style="font-size:10px;font-family:'IBM Plex Mono',monospace;background:none;border:1px solid var(--border);border-radius:var(--r);padding:3px 8px;cursor:pointer;color:var(--ink2);margin-left:8px;transition:all .15s">Unzugeordnet</button>
+          </div>
+          <div id="email-list"><div class="loading-row"><div class="spin"></div>Lade…</div></div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">◈ Offene Delegationen</span>
+            <span class="card-count" id="deleg-count">–</span>
+          </div>
+          <div id="deleg-list"><div class="loading-row"><div class="spin"></div>Lade…</div></div>
+        </div>
+      </div>
+
+      <!-- KALENDER – großes Widget -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">◷ Kalender</span>
+          <button onclick="syncKalenderDash()" id="cal-dash-sync" style="font-size:10px;font-family:'IBM Plex Mono',monospace;background:none;border:1px solid var(--border);border-radius:var(--r);padding:3px 8px;cursor:pointer;color:var(--ink2)">↺ Sync</button>
+        </div>
+        <div id="termine-list"><div class="loading-row"><div class="spin"></div>Lade…</div></div>
+      </div>
+
+    </div>
+
+
+    <!-- VORGÄNGE -->
+    <div class="view" id="v-vorgaenge">
+      <div class="vorgaenge-toolbar">
+        <h2>Vorgänge</h2>
+        <input class="search-input" id="vorgang-search" placeholder="Suchen…" oninput="filterVorgaenge()" />
+        <button class="filter-btn active" id="f-offen" onclick="setFilter('offen',this)">Offen</button>
+        <button class="filter-btn" id="f-alle" onclick="setFilter('',this)">Alle</button>
+        <button class="filter-btn" id="f-abg" onclick="setFilter('abgeschlossen',this)">Abgeschlossen</button>
+        <button class="new-vorgang-btn" onclick="openNewVorgang()">+ Neuer Vorgang</button>
+      </div>
+      <div class="vorgaenge-list" id="vorgaenge-list"></div>
+    </div>
+
+    <!-- VORGANG DETAIL -->
+    <div class="view" id="v-detail">
+      <div class="detail-header">
+        <button class="back-btn" onclick="showView('vorgaenge')">← Zurück</button>
+        <div>
+          <div class="detail-titel" id="detail-titel">–</div>
+          <div style="display:flex;gap:8px;margin-top:6px" id="detail-tags"></div>
+        </div>
+        <button class="new-vorgang-btn" style="margin-left:auto;flex-shrink:0" onclick="openNewDelegation()">+ Delegation</button>
+        <button class="new-vorgang-btn" style="background:var(--blue);flex-shrink:0" onclick="openNewNotiz()">+ Notiz</button>
+      </div>
+      <div class="detail-body" id="detail-body">
+        <div class="loading-row"><div class="spin"></div>Lade…</div>
+      </div>
+    </div>
+
+    <!-- CHAT -->
+    <div class="view" id="v-chat">
+      <div class="chat-header">
+        <h2>KI-Assistent</h2>
+        <div class="model-tag" id="model-tag">haiku</div>
+      </div>
+      <div class="messages" id="msgs"></div>
+      <div class="input-area">
+        <div class="quick-row">
+          <button class="qbtn" onclick="quickSend('Was sind meine dringendsten Vorgänge heute?')">🔴 Dringendes</button>
+          <button class="qbtn" onclick="quickSend('Welche Delegationen sind überfällig?')">⚠ Überfällig</button>
+          <button class="qbtn" onclick="quickSend('Erstelle das Morgen-Briefing.')">☀ Briefing</button>
+          <button class="qbtn" onclick="quickSend('Welche unzugeordneten E-Mails haben wir?')">✉ E-Mails</button>
+        </div>
+        <div class="img-row" id="img-row"></div>
+        <div class="input-row">
+          <div class="input-wrap">
+            <textarea id="ta" rows="1" placeholder="Frage stellen, Vorgang anlegen, Delegation erstellen…" oninput="autoGrow(this)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}"></textarea>
+            <button class="icon-btn" title="Foto / reMarkable-Notiz" onclick="document.getElementById('fi').click()">📷</button>
+            <input type="file" id="fi" accept="image/*,application/pdf" multiple hidden onchange="addImgs(this)"/>
+          </div>
+          <button class="send-btn" id="sbtn" onclick="sendChat()">Senden</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- E-MAIL DETAIL -->
+    <div class="view" id="v-email">
+      <div class="email-view-header">
+        <button class="back-btn" id="email-back-btn" onclick="showView('dash')">← Zurück</button>
+        <span style="font-size:12px;color:var(--ink3);font-family:'IBM Plex Mono',monospace" id="email-account-label"></span>
+      </div>
+      <div class="email-view-body">
+        <!-- Linke Seite: E-Mail + Antwort -->
+        <div class="email-main">
+          <div class="email-from-block">
+            <div class="email-subject-line" id="ev-subject">–</div>
+            <div class="email-meta-line">
+              <span id="ev-from"></span>
+              <span id="ev-date"></span>
+            </div>
+          </div>
+          <div id="ev-body"><div class="loading-row"><div class="spin"></div>Lade…</div></div>
+
+          <!-- Antwort -->
+          <div class="reply-section" id="reply-section" style="display:none">
+            <div class="reply-label">Antworten</div>
+            <textarea class="reply-textarea" id="reply-text" placeholder="Ihre Antwort…"></textarea>
+            <div class="reply-actions">
+              <button class="ki-entwurf-btn" onclick="kiEntwurf()" id="ki-entwurf-btn">◈ KI-Entwurf</button>
+              <button class="reply-send-btn" onclick="sendReply()" id="reply-send-btn">Senden →</button>
+              <button style="padding:8px 12px;background:none;border:1px solid var(--border);border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:10px;cursor:pointer;color:var(--ink3)" onclick="document.getElementById('reply-section').style.display='none'">Abbrechen</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Rechte Seite: KI + Aktionen -->
+        <div class="email-sidebar">
+          <!-- Aktionen -->
+          <div class="email-action-card">
+            <div class="email-action-title">Aktionen</div>
+            <button class="email-action-btn" onclick="document.getElementById('reply-section').style.display='block';document.getElementById('reply-text').focus()">✉ Antworten</button>
+            <button class="email-action-btn" onclick="archivieren()">✓ Archivieren</button>
+            <div style="height:8px"></div>
+            <div class="email-action-title">Vorgang zuordnen</div>
+            <select class="vorgang-select" id="ev-vorgang-select">
+              <option value="">Vorgang wählen…</option>
+            </select>
+            <button class="email-action-btn primary" onclick="zuordnen()">→ Zuordnen</button>
+            <button class="email-action-btn" onclick="neuerVorgangAusEmail()">+ Neuer Vorgang</button>
+          </div>
+
+          <!-- KI-Analyse -->
+          <div class="ki-analyse-box">
+            <div class="email-action-title">◈ KI-Analyse</div>
+            <div class="ki-analyse-text" id="ev-ki-analyse">
+              <div class="loading-row"><div class="spin"></div>Analysiere…</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- EINSTELLUNGEN -->
+    <div class="view" id="v-einstellungen" style="overflow-y:auto;padding:28px">
+      <div style="font-family:'Playfair Display',serif;font-size:26px;color:var(--ink);margin-bottom:24px">Einstellungen</div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-content:start">
+
+        <!-- E-MAIL-KONTEN -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">✉ E-Mail-Konten</span>
+            <button onclick="openModal('m-email')" style="font-size:10px;font-family:'IBM Plex Mono',monospace;background:var(--accent);color:#fff;border:none;border-radius:var(--r);padding:3px 10px;cursor:pointer">+ Hinzufügen</button>
+          </div>
+          <div id="s-email-list"><div class="loading-row"><div class="spin"></div>Lade…</div></div>
+        </div>
+
+        <!-- KALENDER -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">◷ Kalender (CalDAV)</span>
+            <button onclick="discoverKalender()" style="font-size:10px;font-family:'IBM Plex Mono',monospace;background:var(--accent);color:#fff;border:none;border-radius:var(--r);padding:3px 10px;cursor:pointer">⊕ Entdecken</button>
+          </div>
+          <div id="s-cal-list"><div class="loading-row"><div class="spin"></div>Lade…</div></div>
+          <button onclick="syncKalender()" id="cal-sync-btn" style="margin-top:10px;width:100%;padding:7px;background:none;border:1px solid var(--border);border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:10px;cursor:pointer;color:var(--ink2);transition:all .15s">↺ Kalender jetzt synchronisieren</button>
+        </div>
+
+        <!-- PERSONEN -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">◈ Delegations-Personen</span>
+            <button onclick="openModal('m-person')" style="font-size:10px;font-family:'IBM Plex Mono',monospace;background:var(--accent);color:#fff;border:none;border-radius:var(--r);padding:3px 10px;cursor:pointer">+ Hinzufügen</button>
+          </div>
+          <div id="s-person-list"><div class="loading-row"><div class="spin"></div>Lade…</div></div>
+        </div>
+
+        <!-- SYSTEM -->
+        <div class="card">
+          <div class="card-header"><span class="card-title">⚙ System</span></div>
+          <div id="s-system-info"><div class="loading-row"><div class="spin"></div>Lade…</div></div>
+        </div>
+
+        <!-- PUSHOVER -->
+        <div class="card">
+          <div class="card-header"><span class="card-title">🔔 Pushover</span></div>
+          <div style="font-size:11px;color:var(--ink2);line-height:1.65;margin-bottom:12px">
+            Benachrichtigungen direkt aufs Handy:<br>
+            Morgen-Briefing · Überfällige Delegationen · Boox-Notizen · Termin-Erinnerungen (30 Min.)
+          </div>
+          <div style="display:grid;gap:6px">
+            <button onclick="pushTest()" class="email-action-btn">📱 Testbenachrichtigung senden</button>
+            <button onclick="pushManuell()" class="email-action-btn">✉ Eigene Nachricht senden</button>
+          </div>
+          <div style="margin-top:12px;font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--ink3)">
+            Automatisch aktiv:<br>
+            · Briefing täglich 6:30 Uhr<br>
+            · Überfällige Delegationen täglich 8:00 Uhr<br>
+            · Termin-Erinnerungen 30 Min. vorher<br>
+            · Neue Boox-Notizen nach Verarbeitung
+          </div>
+        </div>
+
+        <!-- SYSTEM UPDATE -->
+        <div class="card wide">
+          <div class="card-header"><span class="card-title">↑ System-Update</span></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px">
+
+            <!-- GitHub Pull -->
+            <div>
+              <div style="font-size:10px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.1em;color:var(--ink3);margin-bottom:10px">GitHub</div>
+              <div style="font-size:11px;color:var(--ink2);margin-bottom:12px;line-height:1.6">
+                Aktuellen Stand von<br>
+                <code style="font-family:'IBM Plex Mono',monospace;background:var(--paper2);padding:1px 4px;border-radius:2px">rhigma/conspectus</code><br>
+                laden und neu starten.
+              </div>
+              <button onclick="gitPull()" id="git-pull-btn"
+                style="width:100%;padding:10px;background:var(--ink);color:var(--paper);border:none;border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:11px;cursor:pointer;letter-spacing:.04em">
+                ↓ Von GitHub laden
+              </button>
+              <div id="git-pull-result" style="margin-top:8px;font-size:11px;font-family:'IBM Plex Mono',monospace;min-height:16px"></div>
+            </div>
+
+            <!-- Datei hochladen -->
+            <div>
+              <div style="font-size:10px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.1em;color:var(--ink3);margin-bottom:10px">Datei hochladen</div>
+              <div style="font-size:11px;color:var(--ink2);margin-bottom:12px;line-height:1.6">
+                Frontend: <code style="font-family:'IBM Plex Mono',monospace;background:var(--paper2);padding:1px 4px;border-radius:2px">index.html</code> → sofort aktiv<br>
+                Backend: <code style="font-family:'IBM Plex Mono',monospace;background:var(--paper2);padding:1px 4px;border-radius:2px">.js-Dateien</code> → Neustart erforderlich
+              </div>
+              <input type="file" id="update-file" accept=".html,.js"
+                style="display:none" onchange="uploadFile(this)"/>
+              <button onclick="document.getElementById('update-file').click()"
+                style="width:100%;padding:10px;background:var(--paper);border:2px dashed var(--border2);border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:11px;cursor:pointer;color:var(--ink2);transition:all .15s"
+                onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'"
+                onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--ink2)'"
+                id="upload-btn">
+                📂 Datei auswählen und hochladen
+              </button>
+              <div id="upload-result" style="margin-top:8px;font-size:11px;font-family:'IBM Plex Mono',monospace;min-height:16px"></div>
+            </div>
+
+            <!-- Server-Kontrolle + Log -->
+            <div>
+              <div style="font-size:10px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.1em;color:var(--ink3);margin-bottom:10px">Server</div>
+              <button onclick="serverRestart()" id="restart-btn"
+                style="width:100%;padding:9px;margin-bottom:8px;background:none;border:1px solid var(--border2);border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:11px;cursor:pointer;color:var(--ink2);transition:all .15s"
+                onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'"
+                onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--ink2)'">
+                ↺ Server neu starten
+              </button>
+              <button onclick="loadLog()" id="log-btn"
+                style="width:100%;padding:9px;background:none;border:1px solid var(--border2);border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:11px;cursor:pointer;color:var(--ink2);transition:all .15s"
+                onmouseover="this.style.borderColor='var(--blue)';this.style.color='var(--blue)'"
+                onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--ink2)'">
+                📋 Live-Log anzeigen
+              </button>
+              <div id="log-box" style="display:none;margin-top:10px;background:var(--ink);color:var(--accent2);font-family:'IBM Plex Mono',monospace;font-size:10px;padding:10px;border-radius:var(--r);max-height:200px;overflow-y:auto;white-space:pre;line-height:1.5"></div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- NEXTCLOUD / BOOX -->
+        <div class="card wide">
+          <div class="card-header"><span class="card-title">✎ Boox / Nextcloud</span></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div>
+              <div style="font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--ink3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Nextcloud-URL</div>
+              <div style="font-size:12px;color:var(--ink2);font-family:'IBM Plex Mono',monospace" id="s-nc-url">–</div>
+            </div>
+            <div>
+              <div style="font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--ink3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Boox-Ordner</div>
+              <div style="font-size:12px;color:var(--ink2);font-family:'IBM Plex Mono',monospace" id="s-boox-pfad">–</div>
+            </div>
+          </div>
+          <button onclick="booxSyncManuell()" style="margin-top:12px;padding:7px 14px;background:none;border:1px solid var(--border);border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:10px;cursor:pointer;color:var(--ink2)">↺ Boox-Notizen jetzt prüfen</button>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- MODAL: KALENDER DISCOVERY -->
+<div class="modal-bg" id="m-cal-discover" style="display:none" onclick="bgClose(event,'m-cal-discover')">
+  <div class="modal" style="width:480px">
+    <h2>Kalender entdecken</h2>
+    <div id="cal-discover-body">
+      <div class="mf"><label>Nextcloud CalDAV-Root-URL</label>
+        <input id="cd-url" value=""/>
+      </div>
+      <div class="mf"><label>Benutzername</label><input id="cd-user" value=""/></div>
+      <div class="mf"><label>App-Passwort</label><input id="cd-pass" type="password" value=""/></div>
+      <div class="modal-btns">
+        <button class="btn-c" onclick="closeM('m-cal-discover')">Abbrechen</button>
+        <button class="btn-s" onclick="startDiscovery()" id="cd-btn">Kalender suchen →</button>
+      </div>
+    </div>
+    <div id="cal-discover-results" style="display:none">
+      <div style="font-size:11px;color:var(--ink3);font-family:'IBM Plex Mono',monospace;margin-bottom:12px">
+        Gefundene Kalender – bitte auswählen:
+      </div>
+      <div id="cal-discover-list"></div>
+      <div class="modal-btns" style="margin-top:16px">
+        <button class="btn-c" onclick="document.getElementById('cal-discover-results').style.display='none';document.getElementById('cal-discover-body').style.display='block'">Zurück</button>
+        <button class="btn-s" onclick="saveSelectedCals()" id="cd-save-btn">Ausgewählte hinzufügen</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: NEUES E-MAIL-KONTO -->
+<div class="modal-bg" id="m-email" style="display:none" onclick="bgClose(event,'m-email')">
+  <div class="modal">
+    <h2>IMAP-Konto hinzufügen</h2>
+    <div class="mf"><label>Anzeigename</label><input id="em-label" placeholder="Schule Berlin"/></div>
+    <div class="mf"><label>E-Mail-Adresse</label><input id="em-email" type="email" placeholder="ich@schule.de"/></div>
+    <div class="mf"><label>IMAP-Server</label><input id="em-host" placeholder="mail.schule.de"/></div>
+    <div class="mf"><label>Port</label><input id="em-port" type="number" value="993"/></div>
+    <div class="mf"><label>Benutzername</label><input id="em-user" placeholder="ich@schule.de"/></div>
+    <div class="mf"><label>Passwort</label><input id="em-pass" type="password"/></div>
+    <div id="em-test-result" style="font-size:11px;font-family:'IBM Plex Mono',monospace;min-height:16px;margin-top:4px"></div>
+    <div class="modal-btns">
+      <button class="btn-c" onclick="closeM('m-email')">Abbrechen</button>
+      <button class="btn-c" onclick="testEmail()" style="border-color:var(--blue);color:var(--blue)">Verbindung testen</button>
+      <button class="btn-s" onclick="saveEmail()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: NEUER KALENDER -->
+<div class="modal-bg" id="m-cal" style="display:none" onclick="bgClose(event,'m-cal')">
+  <div class="modal">
+    <h2>CalDAV-Kalender hinzufügen</h2>
+    <div style="font-size:11px;color:var(--ink3);font-family:'IBM Plex Mono',monospace;margin-bottom:14px;line-height:1.6">
+      Nextcloud CalDAV-URL:<br>
+      <span style="color:var(--accent)">https://NEXTCLOUD-URL/remote.php/dav/calendars/BENUTZER/KALENDER-NAME/</span><br>
+      Den Kalender-Namen findest du in Nextcloud unter Kalender → ⋯ → Link kopieren.
+    </div>
+    <div class="mf"><label>Anzeigename</label><input id="cal-label" placeholder="Privat"/></div>
+    <div class="mf"><label>CalDAV-URL</label><input id="cal-url" placeholder="https://NEXTCLOUD-URL/remote.php/dav/calendars/BENUTZER/…/"/></div>
+    <div class="mf"><label>Benutzername</label><input id="cal-user" value=""/></div>
+    <div class="mf"><label>Passwort (App-Passwort)</label><input id="cal-pass" type="password" value=""/></div>
+    <div class="mf"><label>Farbe</label>
+      <div style="display:flex;gap:8px" id="cal-color-row">
+        ${['#8fb87a','#7baed4','#d4a853','#c97070','#b07dd4','#d47d9e'].map((c,i) =>
+          `<div onclick="selectCalColor('${c}',this)" style="width:22px;height:22px;border-radius:50%;background:${c};cursor:pointer;border:2px solid ${i===0?'#333':'transparent'}" data-color="${c}"></div>`
+        ).join('')}
+      </div>
+    </div>
+    <div id="cal-test-result" style="font-size:11px;font-family:'IBM Plex Mono',monospace;min-height:16px;margin-top:4px"></div>
+    <div class="modal-btns">
+      <button class="btn-c" onclick="closeM('m-cal')">Abbrechen</button>
+      <button class="btn-c" onclick="testCal()" style="border-color:var(--blue);color:var(--blue)">Verbindung testen</button>
+      <button class="btn-s" onclick="saveCal()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: NEUE PERSON -->
+<div class="modal-bg" id="m-person" style="display:none" onclick="bgClose(event,'m-person')">
+  <div class="modal">
+    <h2>Person hinzufügen</h2>
+    <div class="mf"><label>Name</label><input id="p-name" placeholder="Max Mustermann"/></div>
+    <div class="mf"><label>Rolle</label>
+      <select id="p-rolle">
+        <option value="sekretariat">Sekretariat</option>
+        <option value="lehrkraft">Lehrkraft</option>
+        <option value="ssa">Schulsozialarbeit</option>
+        <option value="efoeb">eFöB</option>
+        <option value="selbst">Selbst</option>
+        <option value="sonstiges">Sonstiges</option>
+      </select>
+    </div>
+    <div class="mf"><label>E-Mail (optional)</label><input id="p-email" type="email" placeholder="max@schule.de"/></div>
+    <div class="modal-btns">
+      <button class="btn-c" onclick="closeM('m-person')">Abbrechen</button>
+      <button class="btn-s" onclick="savePerson()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: NEUER VORGANG -->
+<div class="modal-bg" id="m-vorgang" style="display:none" onclick="bgClose(event,'m-vorgang')">
+  <div class="modal">
+    <h2>Neuer Vorgang</h2>
+    <div class="mf"><label>Titel</label><input id="nv-titel" placeholder="z.B. Vera 3 2026"/></div>
+    <div class="mf"><label>Typ</label>
+      <select id="nv-typ">
+        <option value="personal">Personal</option>
+        <option value="behoerde">Behörde</option>
+        <option value="veranstaltung">Veranstaltung</option>
+        <option value="planung">Planung</option>
+        <option value="sonstiges" selected>Sonstiges</option>
+      </select>
+    </div>
+    <div class="mf"><label>Priorität</label>
+      <select id="nv-prio">
+        <option value="1">🔴 Hoch</option>
+        <option value="2" selected>🟡 Mittel</option>
+        <option value="3">🟢 Niedrig</option>
+      </select>
+    </div>
+    <div class="mf"><label>Deadline</label><input type="date" id="nv-deadline"/></div>
+    <div class="mf"><label>Beschreibung</label><textarea id="nv-beschreibung" placeholder="Optional…"></textarea></div>
+    <div class="modal-btns">
+      <button class="btn-c" onclick="closeM('m-vorgang')">Abbrechen</button>
+      <button class="btn-s" onclick="saveVorgang()">Anlegen</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: NEUE DELEGATION -->
+<div class="modal-bg" id="m-delegation" style="display:none" onclick="bgClose(event,'m-delegation')">
+  <div class="modal">
+    <h2>Delegation anlegen</h2>
+    <div class="mf"><label>An</label>
+      <select id="nd-person">
+        <option value="">Bitte wählen…</option>
+        
+        
+        <option value="Schulleitung|selbst">Schulleitung (selbst)</option>
+      </select>
+    </div>
+    <div class="mf"><label>Aufgabe</label><textarea id="nd-aufgabe" placeholder="Was soll erledigt werden?"></textarea></div>
+    <div class="mf"><label>Deadline</label><input type="date" id="nd-deadline"/></div>
+    <div class="mf"><label>Notiz</label><input id="nd-notiz" placeholder="Optional…"/></div>
+    <div class="modal-btns">
+      <button class="btn-c" onclick="closeM('m-delegation')">Abbrechen</button>
+      <button class="btn-s" onclick="saveDelegation()">Anlegen</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: NEUE NOTIZ -->
+<div class="modal-bg" id="m-notiz" style="display:none" onclick="bgClose(event,'m-notiz')">
+  <div class="modal">
+    <h2>Notiz hinzufügen</h2>
+    <div class="mf"><label>Titel</label><input id="nn-titel" placeholder="z.B. Gesprächsprotokoll 30.04."/></div>
+    <div class="mf"><label>Inhalt</label><textarea id="nn-inhalt" style="min-height:120px" placeholder="Notizinhalt…"></textarea></div>
+    <div class="modal-btns">
+      <button class="btn-c" onclick="closeM('m-notiz')">Abbrechen</button>
+      <button class="btn-s" onclick="saveNotiz()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── STATE ──────────────────────────────────────────────────────────────────────
+const API = '/api';
+let SECRET = sessionStorage.getItem('ki_s') || '';
+let chatHistory = [], imgs = [];
+let activeVorgangId = null;
+let vorgangFilter = 'offen';
+let allVorgaenge = [];
+
+// ── API ────────────────────────────────────────────────────────────────────────
+async function req(method, path, body, fd) {
+  const opts = { method, headers: { 'X-Api-Key': SECRET } };
+  if (fd) { opts.body = body; }
+  else if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+  const r = await fetch(API + path, opts);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+
+// ── LOGIN ──────────────────────────────────────────────────────────────────────
+async function doLogin() {
+  const s = document.getElementById('ls').value.trim();
+  const err = document.getElementById('login-err');
+  if (!s) { err.textContent = 'Bitte Secret eingeben.'; return; }
+  err.textContent = 'Verbinde…';
+  try {
+    SECRET = s;
+    await req('GET', '/stats');
+    sessionStorage.setItem('ki_s', s);
+    document.getElementById('login').style.display = 'none';
+    document.getElementById('app').classList.add('on');
+    boot();
+  } catch(e) { err.textContent = 'Falsches Secret oder Server nicht erreichbar.'; SECRET = ''; }
+}
+function doLogout() { sessionStorage.clear(); location.reload(); }
+
+// Auto-login
+if (SECRET) {
+  req('GET', '/stats').then(() => {
+    document.getElementById('login').style.display = 'none';
+    document.getElementById('app').classList.add('on');
+    boot();
+  }).catch(() => { SECRET = ''; sessionStorage.clear(); });
+}
+
+// ── BOOT ───────────────────────────────────────────────────────────────────────
+function boot() {
+  const now = new Date();
+  const h = now.getHours();
+  const greeting = h < 11 ? 'Guten Morgen' : h < 14 ? 'Guten Tag' : h < 18 ? 'Guten Nachmittag' : 'Guten Abend';
+  document.getElementById('dash-greeting').textContent = greeting;
+  document.getElementById('dash-date').textContent = now.toLocaleDateString('de-DE', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+  loadStats();
+  loadDashboard();
+  addWelcomeMsg();
+}
+
+// ── VIEWS ──────────────────────────────────────────────────────────────────────
+function showView(v) {
+  document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  document.getElementById('v-' + v).classList.add('active');
+  const ni = document.getElementById('n-' + v);
+  if (ni) ni.classList.add('active');
+  if (v === 'vorgaenge') loadVorgaenge();
+  if (v === 'dash') { loadStats(); loadDashboard(); }
+  if (v === 'einstellungen') loadEinstellungen();
+}
+
+// ── STATS ──────────────────────────────────────────────────────────────────────
+async function loadStats() {
+  try {
+    const s = await req('GET', '/stats');
+    document.getElementById('ss-vorgaenge').textContent = s.vorgaenge || 0;
+    document.getElementById('ss-delegationen').textContent = s.delegationen || 0;
+    document.getElementById('ss-unread').textContent = s.unread || 0;
+    document.getElementById('ss-emails').textContent = s.emails || 0;
+    document.getElementById('sync-time').textContent = 'Sync: ' + (s.lastSync ? new Date(s.lastSync).toLocaleTimeString('de-DE', {hour:'2-digit',minute:'2-digit'}) : '–');
+    setStatus(true);
+  } catch(e) { setStatus(false); }
+}
+
+// ── DASHBOARD ──────────────────────────────────────────────────────────────────
+async function loadDashboard() {
+  await Promise.allSettled([loadBriefing(), loadDelegationen(), loadEmails(), loadTermine()]);
+}
+
+async function loadBriefing() {
+  // Letzten gespeicherten Briefing-Text aus Chat-History holen
+  const el = document.getElementById('briefing-text');
+  try {
+    const msgs = await req('GET', '/chat/history?limit=5');
+    const brief = msgs.filter(m => m.role === 'assistant' && m.content.includes('Briefing')).pop();
+    if (brief) { el.innerHTML = renderMd(brief.content); return; }
+    el.innerHTML = '<span style="color:var(--ink3);font-family:\'IBM Plex Mono\',monospace;font-size:11px">Kein Briefing vorhanden. Klicke auf "☀ Briefing" um eines zu erstellen.</span>';
+  } catch(e) { el.innerHTML = '<span style="color:var(--accent);font-size:11px">Fehler beim Laden.</span>'; }
+}
+
+async function doBriefing() {
+  const el = document.getElementById('briefing-text');
+  el.innerHTML = '<div class="loading-row"><div class="spin"></div>Briefing wird erstellt…</div>';
+  document.getElementById('briefing-reload').disabled = true;
+  try {
+    const r = await req('POST', '/briefing');
+    el.innerHTML = renderMd(r.text);
+    loadStats();
+  } catch(e) { el.innerHTML = '<span style="color:var(--accent)">Fehler: ' + esc(e.message) + '</span>'; }
+  finally { document.getElementById('briefing-reload').disabled = false; }
+}
+
+async function loadDelegationen() {
+  const el = document.getElementById('deleg-list');
+  try {
+    const rows = await req('GET', '/delegationen');
+    document.getElementById('deleg-count').textContent = rows.length + ' offen';
+    if (!rows.length) { el.innerHTML = '<div class="empty"><div class="empty-icon">✓</div>Keine offenen Delegationen</div>'; return; }
+    el.innerHTML = rows.slice(0,5).map(d => {
+      const ueb = d.deadline && new Date(d.deadline) < new Date();
+      return `<div class="deleg-row">
+        <span class="deleg-badge ${ueb?'ueberfaellig':'offen'}">${ueb?'Überfällig':'Offen'}</span>
+        <div class="deleg-meta">
+          <div class="deleg-aufgabe">${esc(d.aufgabe)}</div>
+          <div class="deleg-info">${esc(d.an_name)} · ${esc(d.vorgang_titel)}${d.deadline?' · bis '+fmtDate(d.deadline):''}</div>
+        </div>
+        <button class="check-btn" title="Als erledigt markieren" onclick="erledigtDelegation(${d.id})">✓</button>
+      </div>`;
+    }).join('');
+  } catch(e) { el.innerHTML = '<span style="color:var(--accent);font-size:11px">Fehler</span>'; }
+}
+
+async function erledigtDelegation(id) {
+  try {
+    await req('PUT', `/delegationen/${id}/erledigt`);
+    toast('Delegation abgehakt ✓', 'ok');
+    loadDelegationen(); loadStats();
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+}
+
+let emailFilterUnzugeordnet = false;
+
+function toggleEmailFilter() {
+  emailFilterUnzugeordnet = !emailFilterUnzugeordnet;
+  const btn = document.getElementById('email-toggle');
+  btn.textContent = emailFilterUnzugeordnet ? 'Alle' : 'Unzugeordnet';
+  btn.style.borderColor = emailFilterUnzugeordnet ? 'var(--accent)' : 'var(--border)';
+  btn.style.color = emailFilterUnzugeordnet ? 'var(--accent)' : 'var(--ink2)';
+  loadEmails();
+}
+
+async function loadEmails() {
+  const el = document.getElementById('email-list');
+  try {
+    const url = emailFilterUnzugeordnet ? '/emails/unzugeordnet' : '/emails?limit=8';
+    const rows = await req('GET', url);
+    const unread = rows.filter(e => e.unread).length;
+    document.getElementById('email-count').textContent = unread + ' ungelesen';
+    if (!rows.length) { el.innerHTML = '<div class="empty"><div class="empty-icon">✉</div>' + (emailFilterUnzugeordnet ? 'Alle E-Mails zugeordnet' : 'Keine E-Mails') + '</div>'; return; }
+    el.innerHTML = rows.map(e => `
+      <div class="email-row" onclick="emailEinordnen(${e.id},'${esc(e.subject||'')}')">
+        <div class="email-dot ${e.unread?'unread':''}"></div>
+        <div class="email-meta">
+          <div class="email-from">${esc(e.from_name||e.from_email||'?')}</div>
+          <div class="email-subj">${esc(e.subject||'(kein Betreff)')}</div>
+          <div class="email-vorgang">${e.vorgang_titel ? '→ ' + esc(e.vorgang_titel) : 'Nicht zugeordnet'}</div>
+        </div>
+        <div class="email-time">${fmtDate(e.date)}</div>
+      </div>`).join('');
+  } catch(e) { el.innerHTML = '<span style="color:var(--accent);font-size:11px">Fehler: ' + esc(e.message) + '</span>'; }
+}
+
+// ── E-MAIL VIEW ────────────────────────────────────────────────────────────────
+let activeEmailId = null;
+let activeEmailVorgangId = null;
+
+async function openEmail(id, fromView) {
+  activeEmailId = id;
+  document.getElementById('email-back-btn').onclick = () => showView(fromView || 'dash');
+  showView('email');
+
+  // Reset
+  document.getElementById('ev-subject').textContent = '…';
+  document.getElementById('ev-from').textContent = '';
+  document.getElementById('ev-date').textContent = '';
+  document.getElementById('ev-body').innerHTML = '<div class="loading-row"><div class="spin"></div>Lade…</div>';
+  document.getElementById('ev-ki-analyse').innerHTML = '<div class="loading-row"><div class="spin"></div>Analysiere…</div>';
+  document.getElementById('reply-section').style.display = 'none';
+  document.getElementById('reply-text').value = '';
+
+  try {
+    const email = await req('GET', `/emails/${id}`);
+    activeEmailVorgangId = email.vorgang_id;
+
+    document.getElementById('ev-subject').textContent = email.subject || '(kein Betreff)';
+    document.getElementById('ev-from').textContent = email.from_name ? `${email.from_name} <${email.from_email}>` : email.from_email;
+    document.getElementById('ev-date').textContent = fmtDateTime(email.date);
+    document.getElementById('email-account-label').textContent = email.account_label;
+
+    if (email.body_text) {
+      document.getElementById('ev-body').innerHTML = `<div class="email-body-text">${esc(email.body_text)}</div>`;
+    } else {
+      document.getElementById('ev-body').innerHTML = `<div class="email-no-body">
+    Kein E-Mail-Text verfügbar.
+    <button onclick="bodyNachladen()" id="body-nachladen-btn" style="margin-left:10px;padding:5px 12px;background:var(--accent);color:#fff;border:none;border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:11px;cursor:pointer">
+      ↓ Text nachladen
+    </button>
+  </div>`;
+    }
+
+    // Vorgänge für Dropdown laden
+    const vorgaenge = await req('GET', '/vorgaenge?status=offen');
+    const sel = document.getElementById('ev-vorgang-select');
+    sel.innerHTML = '<option value="">Vorgang wählen…</option>' +
+      vorgaenge.map(v => `<option value="${v.id}" ${v.id === email.vorgang_id ? 'selected' : ''}>${esc(v.titel)}</option>`).join('');
+
+    // KI-Analyse
+    kiAnalyseEmail(email);
+
+  } catch(e) {
+    document.getElementById('ev-body').innerHTML = `<div class="empty">Fehler: ${esc(e.message)}</div>`;
+  }
+}
+
+async function kiAnalyseEmail(email) {
+  try {
+    const r = await req('POST', `/emails/${email.id}/einordnen`);
+    if (!r) { document.getElementById('ev-ki-analyse').innerHTML = '<span style="color:var(--ink3);font-size:11px">Keine Analyse möglich.</span>'; return; }
+
+    let html = '';
+    if (r.einordnung === 'ignorieren') {
+      html = `<p style="color:var(--ink3)">Diese E-Mail scheint nicht handlungsrelevant zu sein.</p><p style="margin-top:6px;font-size:11px;color:var(--ink3)">${esc(r.begruendung)}</p>`;
+    } else {
+      const prio = ['','🔴 Hoch','🟡 Mittel','🟢 Niedrig'][r.prioritaet] || '';
+      html = `<p><strong>${r.einordnung === 'vorgang_anlegen' ? 'Neuer Vorgang vorgeschlagen:' : 'Gehört zu:'}</strong></p>
+        <p style="margin:6px 0;color:var(--accent);font-weight:500">${esc(r.vorgang_titel)}</p>
+        <p style="font-size:11px;color:var(--ink3);margin-bottom:8px">${esc(r.begruendung)}</p>
+        <p style="font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace">Priorität: ${prio}</p>`;
+
+      // Vorgang im Dropdown vorauswählen
+      if (r.vorgang_id) {
+        document.getElementById('ev-vorgang-select').value = r.vorgang_id;
+      } else if (r.einordnung === 'vorgang_anlegen') {
+        // Neuen Vorgang-Titel für Button merken
+        document.getElementById('ev-vorgang-select').dataset.neuerTitel = r.vorgang_titel;
+      }
+    }
+    document.getElementById('ev-ki-analyse').innerHTML = html;
+  } catch(e) {
+    document.getElementById('ev-ki-analyse').innerHTML = `<span style="color:var(--accent);font-size:11px">Analyse fehlgeschlagen.</span>`;
+  }
+}
+
+async function zuordnen() {
+  const sel = document.getElementById('ev-vorgang-select');
+  const vorgangId = parseInt(sel.value);
+  if (!vorgangId) { toast('Bitte Vorgang wählen', 'err'); return; }
+  try {
+    await req('POST', `/emails/${activeEmailId}/zuordnen`, { vorgang_id: vorgangId });
+    activeEmailVorgangId = vorgangId;
+    toast('E-Mail zugeordnet ✓', 'ok');
+    loadStats();
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+}
+
+async function neuerVorgangAusEmail() {
+  const sel = document.getElementById('ev-vorgang-select');
+  const vorschlag = sel.dataset.neuerTitel || '';
+  const titel = prompt('Vorgangs-Titel:', vorschlag);
+  if (!titel) return;
+  try {
+    const nv = await req('POST', '/vorgaenge', { titel, typ: 'sonstiges', prioritaet: 2 });
+    await req('POST', `/emails/${activeEmailId}/zuordnen`, { vorgang_id: nv.id });
+    activeEmailVorgangId = nv.id;
+    toast(`Vorgang "${titel}" angelegt und E-Mail zugeordnet ✓`, 'ok');
+    // Dropdown aktualisieren
+    const opt = document.createElement('option');
+    opt.value = nv.id; opt.textContent = titel; opt.selected = true;
+    document.getElementById('ev-vorgang-select').appendChild(opt);
+    loadStats();
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+}
+
+async function archivieren() {
+  try {
+    await req('POST', `/emails/${activeEmailId}/archivieren`);
+    toast('Archiviert ✓', 'ok');
+    loadStats(); loadEmails();
+    showView('dash');
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+}
+
+async function kiEntwurf() {
+  const btn = document.getElementById('ki-entwurf-btn');
+  btn.textContent = '… generiere'; btn.disabled = true;
+  try {
+    const r = await req('POST', `/emails/${activeEmailId}/ki-entwurf`);
+    document.getElementById('reply-text').value = r.entwurf;
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+  finally { btn.textContent = '◈ KI-Entwurf'; btn.disabled = false; }
+}
+
+async function sendReply() {
+  const body = document.getElementById('reply-text').value.trim();
+  if (!body) { toast('Bitte Antwort eingeben', 'err'); return; }
+  const btn = document.getElementById('reply-send-btn');
+  btn.disabled = true; btn.textContent = 'Sende…';
+  try {
+    await req('POST', `/emails/${activeEmailId}/antworten`, {
+      body,
+      vorgang_id: activeEmailVorgangId || null,
+    });
+    toast('Antwort gesendet ✓', 'ok');
+    document.getElementById('reply-section').style.display = 'none';
+    document.getElementById('reply-text').value = '';
+  } catch(e) { toast('Fehler beim Senden: ' + e.message, 'err'); }
+  finally { btn.disabled = false; btn.textContent = 'Senden →'; }
+}
+
+async function emailEinordnen(id) {
+  openEmail(id, 'dash');
+}
+
+async function syncKalenderDash() {
+  const btn = document.getElementById('cal-dash-sync');
+  btn.textContent = '…'; btn.disabled = true;
+  try {
+    await req('POST', '/sync/calendar');
+    toast('Kalender synchronisiert ✓', 'ok');
+    loadTermine();
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+  finally { btn.textContent = '↺ Sync'; btn.disabled = false; }
+}
+
+async function loadTermine() {
+  const el = document.getElementById('termine-list');
+  try {
+    const rows = await req('GET', '/events?days=28');
+    if (!rows.length) {
+      el.innerHTML = '<div style="font-size:11px;color:var(--ink3);font-family:\'IBM Plex Mono\',monospace;padding:8px 0">Keine Termine. Kalender unter ⚙ Einstellungen hinzufügen.</div>';
+      return;
+    }
+
+    const now   = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
+    const dayAfter = new Date(today); dayAfter.setDate(today.getDate() + 2);
+    const weekEnd  = new Date(today); weekEnd.setDate(today.getDate() + 7);
+    const twoWeeks = new Date(today); twoWeeks.setDate(today.getDate() + 28);
+
+    const todayEvents    = rows.filter(e => inRange(e.start_time, today, tomorrow));
+    const tomorrowEvents = rows.filter(e => inRange(e.start_time, tomorrow, dayAfter));
+    const weekEvents     = rows.filter(e => inRange(e.start_time, dayAfter, weekEnd));
+    const laterEvents    = rows.filter(e => inRange(e.start_time, weekEnd, twoWeeks));
+
+    el.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--paper3);border-radius:var(--r);overflow:hidden">
+
+        <!-- Heute -->
+        <div style="padding:14px;border-right:1px solid var(--paper3);border-bottom:1px solid var(--paper3)">
+          <div style="font-size:9px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.12em;color:var(--accent);margin-bottom:10px;font-weight:500">
+            Heute · ${today.toLocaleDateString('de-DE',{weekday:'long',day:'numeric',month:'long'})}
+          </div>
+          ${renderTerminBlock(todayEvents, 'Keine Termine heute')}
+        </div>
+
+        <!-- Morgen -->
+        <div style="padding:14px;border-bottom:1px solid var(--paper3)">
+          <div style="font-size:9px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.12em;color:var(--ink3);margin-bottom:10px;font-weight:500">
+            Morgen · ${tomorrow.toLocaleDateString('de-DE',{weekday:'long',day:'numeric',month:'long'})}
+          </div>
+          ${renderTerminBlock(tomorrowEvents, 'Keine Termine morgen')}
+        </div>
+
+        <!-- Diese Woche -->
+        <div style="padding:14px;border-right:1px solid var(--paper3)">
+          <div style="font-size:9px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.12em;color:var(--ink3);margin-bottom:10px;font-weight:500">
+            Diese Woche
+          </div>
+          ${renderTerminBlock(weekEvents, 'Ruhige Woche')}
+        </div>
+
+        <!-- Vorschau -->
+        <div style="padding:14px">
+          <div style="font-size:9px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.12em;color:var(--ink3);margin-bottom:10px;font-weight:500">
+            Nächste 4 Wochen
+          </div>
+          ${renderTerminBlock(laterEvents, 'Nichts geplant', true)}
+        </div>
+
+      </div>`;
+  } catch(e) {
+    el.innerHTML = '<div style="font-size:11px;color:var(--ink3);font-family:\'IBM Plex Mono\',monospace;padding:8px 0">Kalender unter ⚙ Einstellungen hinzufügen.</div>';
+  }
+}
+
+function inRange(isoStr, from, to) {
+  if (!isoStr) return false;
+  const d = new Date(isoStr);
+  return d >= from && d < to;
+}
+
+function renderTerminBlock(events, emptyText, showDate=false) {
+  if (!events.length) return `<div style="font-size:11px;color:var(--ink3);font-family:'IBM Plex Mono',monospace;font-style:italic">${emptyText}</div>`;
+  return events.slice(0, showDate ? 6 : 8).map(e => {
+    const dt = new Date(e.start_time);
+    const timeStr = e.all_day ? 'Ganztägig' : dt.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Berlin'});
+    const dateStr = showDate ? dt.toLocaleDateString('de-DE',{weekday:'short',day:'numeric',month:'short',timeZone:'Europe/Berlin'}) + ' ' : '';
+    const color = e.cal_color?.startsWith('#') ? e.cal_color : 'var(--blue)';
+    return `<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--paper2);align-items:flex-start">
+      <div style="width:2px;background:${color};border-radius:2px;align-self:stretch;min-height:18px;flex-shrink:0;margin-top:2px"></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(e.title||'?')}</div>
+        <div style="font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace">${dateStr}${timeStr}${e.location?' · '+esc(e.location):''}</div>
+      </div>
+    </div>`;
+  }).join('') + (events.length > (showDate?6:8) ? `<div style="font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace;padding:4px 0">+${events.length-(showDate?6:8)} weitere</div>` : '');
+}
+
+// ── VORGÄNGE ───────────────────────────────────────────────────────────────────
+async function loadVorgaenge() {
+  const el = document.getElementById('vorgaenge-list');
+  el.innerHTML = '<div class="loading-row"><div class="spin"></div>Lade Vorgänge…</div>';
+  try {
+    const params = vorgangFilter ? `?status=${vorgangFilter}` : '';
+    allVorgaenge = await req('GET', '/vorgaenge' + params);
+    renderVorgaenge(allVorgaenge);
+  } catch(e) { el.innerHTML = '<div class="empty">Fehler: ' + esc(e.message) + '</div>'; }
+}
+
+function filterVorgaenge() {
+  const q = document.getElementById('vorgang-search').value.toLowerCase();
+  const filtered = q ? allVorgaenge.filter(v => v.titel.toLowerCase().includes(q)) : allVorgaenge;
+  renderVorgaenge(filtered);
+}
+
+function setFilter(status, btn) {
+  vorgangFilter = status;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  loadVorgaenge();
+}
+
+function renderVorgaenge(list) {
+  const el = document.getElementById('vorgaenge-list');
+  if (!list.length) { el.innerHTML = '<div class="empty"><div class="empty-icon">◈</div>Keine Vorgänge gefunden</div>'; return; }
+  el.innerHTML = list.map(v => {
+    const dl = v.deadline ? new Date(v.deadline) : null;
+    const ueb = dl && dl < new Date();
+    const dlStr = dl ? `Deadline: ${dl.toLocaleDateString('de-DE')}` : '';
+    return `<div class="vorgang-card prio-${v.prioritaet}" onclick="openVorgang(${v.id})">
+      <div class="prio p${v.prioritaet}"></div>
+      <div class="vorgang-main">
+        <div class="vorgang-titel">${esc(v.titel)}</div>
+        <div class="vorgang-meta">
+          <span class="vtag ${v.typ}">${v.typ}</span>
+          <span class="vtag status">${v.status.replace('_',' ')}</span>
+          ${dlStr ? `<span class="vorgang-deadline ${ueb?'ueberfaellig':''}">${dlStr}</span>` : ''}
+        </div>
+      </div>
+      <div class="vorgang-aside">
+        ${v.offene_delegationen>0 ? `<div class="vorgang-deleg-count">${v.offene_delegationen} offen</div>` : ''}
+        <div class="vorgang-eintrag-count">${v.eintraege_anzahl||0} Einträge</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── VORGANG DETAIL ─────────────────────────────────────────────────────────────
+async function openVorgang(id) {
+  activeVorgangId = id;
+  showView('detail');
+  document.getElementById('detail-titel').textContent = '…';
+  document.getElementById('detail-body').innerHTML = '<div class="loading-row"><div class="spin"></div>Lade…</div>';
+  try {
+    const v = await req('GET', `/vorgaenge/${id}`);
+    document.getElementById('detail-titel').textContent = v.titel;
+    document.getElementById('detail-tags').innerHTML = [
+      `<span class="vtag ${v.typ}">${v.typ}</span>`,
+      `<span class="vtag status">${v.status.replace('_',' ')}</span>`,
+      v.deadline ? `<span class="vtag" style="background:var(--goldl);color:var(--gold)">${new Date(v.deadline).toLocaleDateString('de-DE')}</span>` : '',
+    ].join('');
+    renderDetail(v);
+  } catch(e) { document.getElementById('detail-body').innerHTML = '<div class="empty">Fehler: ' + esc(e.message) + '</div>'; }
+}
+
+function renderDetail(v) {
+  // Chronologie zusammenbauen
+  const all = [
+    ...v.emails.map(e => ({ typ:'email', titel:e.subject||'(kein Betreff)', inhalt:`Von: ${e.from_name||e.from_email}\n\n${e.body_text||''}`, time:e.date, ref:e })),
+    ...v.eintraege.map(e => ({ typ:e.typ, titel:e.titel||e.typ, inhalt:e.inhalt||'', time:e.created_at })),
+  ].sort((a,b) => new Date(a.time) - new Date(b.time));
+
+  const icons = { email:'✉', notiz:'✎', datei:'◻', delegation:'→', termin:'◷', ki_analyse:'◈' };
+
+  const chronHtml = all.length ? all.map((e,i) => `
+    <div class="chron-item">
+      <div class="chron-icon ${e.typ}">${icons[e.typ]||'·'}</div>
+      <div class="chron-content">
+        <div class="chron-title">${esc(e.titel)}</div>
+        <div class="chron-text" id="ct-${i}">${esc(e.inhalt||'').replace(/\n/g,'<br>')}</div>
+        ${(e.inhalt||'').length > 200 ? `<button class="expand-btn" onclick="toggleExpand('ct-${i}',this)">Mehr anzeigen ↓</button>` : ''}
+        <div class="chron-time">${fmtDateTime(e.time)}</div>
+      </div>
+    </div>`).join('')
+    : '<div class="empty" style="padding:20px 0">Noch keine Einträge</div>';
+
+  const delegHtml = v.delegationen.length ? v.delegationen.map(d => `
+    <div class="deleg-row">
+      <span class="deleg-badge ${d.status==='offen'?'offen':'ueberfaellig'}">${d.status}</span>
+      <div class="deleg-meta">
+        <div class="deleg-aufgabe">${esc(d.aufgabe)}</div>
+        <div class="deleg-info">${esc(d.an_name)}${d.deadline?' · bis '+fmtDate(d.deadline):''}</div>
+      </div>
+      ${d.status==='offen' ? `<button class="check-btn" onclick="erledigtDelegation(${d.id})">✓</button>` : ''}
+    </div>`).join('')
+    : '<div style="font-size:11px;color:var(--ink3);font-family:\'IBM Plex Mono\',monospace;padding:8px 0">Keine Delegationen</div>';
+
+  document.getElementById('detail-body').innerHTML = `
+    <div>
+      <div class="card-header" style="margin-bottom:12px"><span class="card-title">Chronologie</span><span class="card-count">${all.length} Einträge</span></div>
+      <div class="chronologie">${chronHtml}</div>
+    </div>
+    <div class="detail-sidebar">
+      <div class="card" style="padding:14px">
+        <div class="card-header"><span class="card-title">Delegationen</span></div>
+        ${delegHtml}
+      </div>
+      ${v.beschreibung ? `<div class="card" style="padding:14px">
+        <div class="card-header"><span class="card-title">Beschreibung</span></div>
+        <div style="font-size:12px;color:var(--ink2);line-height:1.65">${esc(v.beschreibung)}</div>
+      </div>` : ''}
+      <button class="new-vorgang-btn" style="background:var(--ink);width:100%" onclick="chatUeberVorgang(${v.id},'${esc(v.titel)}')">◈ KI fragen zu diesem Vorgang</button>
+    </div>`;
+}
+
+function toggleExpand(id, btn) {
+  const el = document.getElementById(id);
+  el.classList.toggle('expanded');
+  btn.textContent = el.classList.contains('expanded') ? 'Weniger ↑' : 'Mehr anzeigen ↓';
+}
+
+function chatUeberVorgang(id, titel) {
+  showView('chat');
+  document.getElementById('n-chat').classList.add('active');
+  quickSend(`Fasse den aktuellen Stand des Vorgangs "${titel}" (ID: ${id}) zusammen und nenne die nächsten Schritte.`);
+}
+
+// ── NEUE OBJEKTE ───────────────────────────────────────────────────────────────
+function openNewVorgang() { document.getElementById('m-vorgang').style.display='flex'; }
+async function saveVorgang() {
+  const titel = g('nv-titel');
+  if (!titel) { toast('Bitte Titel eingeben', 'err'); return; }
+  try {
+    await req('POST', '/vorgaenge', { titel, typ:g('nv-typ'), prioritaet:parseInt(g('nv-prio'))||2, deadline:g('nv-deadline')||null, beschreibung:g('nv-beschreibung')||null });
+    closeM('m-vorgang');
+    toast('Vorgang angelegt ✓', 'ok');
+    loadVorgaenge(); loadStats();
+    ['nv-titel','nv-beschreibung','nv-deadline'].forEach(id => document.getElementById(id).value='');
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+}
+
+function openNewDelegation() {
+  if (!activeVorgangId) { toast('Kein Vorgang aktiv', 'err'); return; }
+  document.getElementById('m-delegation').style.display='flex';
+}
+async function saveDelegation() {
+  const personVal = g('nd-person');
+  if (!personVal || !g('nd-aufgabe')) { toast('Bitte alle Felder ausfüllen', 'err'); return; }
+  const [an_name, an_rolle] = personVal.split('|');
+  try {
+    await req('POST', '/chat', JSON.stringify({
+      text: `Lege eine Delegation an: Vorgang-ID ${activeVorgangId}, an ${an_name}, Rolle ${an_rolle}, Aufgabe: ${g('nd-aufgabe')}, Deadline: ${g('nd-deadline')||'keine'}`,
+      history: [], smart: false
+    }) && null || null);
+    // Direkt über API
+    const [pool] = [null];
+    await fetch(API + '/chat', {
+      method: 'POST',
+      headers: { 'X-Api-Key': SECRET, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: `Delegation anlegen`,
+        history: [],
+      })
+    });
+    // Einfacher direkter Weg über executeAction
+    const r = await req('POST', '/chat', {
+      text: `Bitte lege folgende Delegation an und bestätige: Vorgang ${activeVorgangId}, an ${an_name} (${an_rolle}), Aufgabe: "${g('nd-aufgabe')}", Deadline: ${g('nd-deadline')||'keine Angabe'}.`,
+      history: [], smart: false
+    });
+    closeM('m-delegation');
+    toast('Delegation angelegt ✓', 'ok');
+    openVorgang(activeVorgangId);
+    ['nd-aufgabe','nd-deadline','nd-notiz'].forEach(id => document.getElementById(id).value='');
+    document.getElementById('nd-person').value = '';
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+}
+
+function openNewNotiz() {
+  if (!activeVorgangId) { toast('Kein Vorgang aktiv', 'err'); return; }
+  document.getElementById('m-notiz').style.display='flex';
+}
+async function saveNotiz() {
+  if (!g('nn-titel') || !g('nn-inhalt')) { toast('Bitte Titel und Inhalt eingeben', 'err'); return; }
+  try {
+    await req('POST', '/chat', {
+      text: `Bitte lege folgende Notiz zum Vorgang ${activeVorgangId} an:\nTitel: "${g('nn-titel')}"\nInhalt: "${g('nn-inhalt')}"`,
+      history: [], smart: false
+    });
+    closeM('m-notiz');
+    toast('Notiz gespeichert ✓', 'ok');
+    openVorgang(activeVorgangId);
+    ['nn-titel','nn-inhalt'].forEach(id => document.getElementById(id).value='');
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+}
+
+// ── CHAT ───────────────────────────────────────────────────────────────────────
+function addWelcomeMsg() {
+  appendMsg('assistant', '**Guten Tag!** Ich bin Ihr Assistent für die Schulleitung.\n\nIch helfe Ihnen Vorgänge zu verwalten, E-Mails zuzuordnen, Delegationen zu verfolgen und den Überblick zu behalten.\n\nSie können mir auch Fotos von handgeschriebenen Notizen oder reMarkable-Seiten schicken – ich digitalisiere und ordne sie zu.');
+}
+
+function quickSend(text) {
+  showView('chat');
+  document.getElementById('ta').value = text;
+  setTimeout(sendChat, 60);
+}
+
+async function sendChat() {
+  const ta = document.getElementById('ta');
+  const text = ta.value.trim();
+  if (!text && imgs.length === 0) return;
+  appendMsg('user', text, imgs.map(i=>i.url));
+  ta.value = ''; ta.style.height = 'auto';
+  const imgsCopy = [...imgs]; imgs = []; renderImgRow();
+  document.getElementById('sbtn').disabled = true;
+  const tid = appendTyping();
+  const smart = imgsCopy.length > 0;
+  document.getElementById('model-tag').textContent = smart ? 'sonnet' : 'haiku';
+  try {
+    let result;
+    if (imgsCopy.length > 0) {
+      const fd = new FormData();
+      fd.append('text', text || 'Bitte analysiere diese Notiz und ordne sie einem Vorgang zu.');
+      fd.append('history', JSON.stringify(chatHistory.slice(-10)));
+      fd.append('smart', 'true');
+      imgsCopy.forEach((img,i) => fd.append('images', dataURLtoBlob(img.url), `img${i}.jpg`));
+      const r = await fetch(API+'/chat', { method:'POST', headers:{'X-Api-Key':SECRET}, body:fd });
+      result = await r.json();
+    } else {
+      result = await req('POST', '/chat', { text, history:chatHistory.slice(-10), smart:false });
+    }
+    removeTyping(tid);
+    appendMsg('assistant', result.text, [], result.actionResult);
+    chatHistory.push({role:'user',content:text});
+    chatHistory.push({role:'assistant',content:result.text});
+    if (result.actionResult) { loadStats(); }
+  } catch(e) {
+    removeTyping(tid);
+    appendMsg('assistant', '⚠ Verbindungsfehler: ' + e.message);
+  }
+  document.getElementById('sbtn').disabled = false;
+}
+
+function appendMsg(role, text, imgUrls=[], action=null) {
+  const el = document.getElementById('msgs');
+  const d = document.createElement('div');
+  d.className = 'msg' + (role==='user'?' u':'');
+  const imgHtml = (imgUrls||[]).map(u=>`<img src="${u}" style="max-width:130px;border-radius:var(--r);margin-bottom:6px;display:block">`).join('');
+  const actionHtml = action ? `<div class="action-done">✓ ${esc(action.done||JSON.stringify(action))}</div>` : '';
+  d.innerHTML = `<div class="av">${role==='user'?'LB':'KI'}</div><div class="bubble">${imgHtml}${renderMd(text)}${actionHtml}</div>`;
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+}
+function appendTyping() {
+  const id='tp'+Date.now();
+  document.getElementById('msgs').insertAdjacentHTML('beforeend',
+    `<div class="msg" id="${id}"><div class="av">KI</div><div class="bubble"><div class="typing-wrap"><span></span><span></span><span></span></div></div></div>`);
+  document.getElementById('msgs').scrollTop = 9999;
+  return id;
+}
+function removeTyping(id) { document.getElementById(id)?.remove(); }
+
+// ── IMAGES ─────────────────────────────────────────────────────────────────────
+function addImgs(input) {
+  Array.from(input.files).forEach(f=>{
+    const r=new FileReader();
+    r.onload=ev=>{ imgs.push({url:ev.target.result,file:f}); renderImgRow(); };
+    r.readAsDataURL(f);
+  });
+  input.value='';
+}
+function renderImgRow() {
+  document.getElementById('img-row').innerHTML = imgs.map((img,i)=>`
+    <div class="img-thumb"><img src="${img.url}"/><button class="img-rm" onclick="imgs.splice(${i},1);renderImgRow()">×</button></div>`).join('');
+}
+function dataURLtoBlob(url) {
+  const[h,d]=url.split(',');const mime=h.match(/:(.*?);/)[1];const b=atob(d),a=new Uint8Array(b.length);
+  for(let i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return new Blob([a],{type:mime});
+}
+
+// ── EINSTELLUNGEN ──────────────────────────────────────────────────────────────
+async function loadEinstellungen() {
+  await Promise.allSettled([
+    loadSettingsEmails(),
+    loadSettingsCals(),
+    loadSettingsPersonen(),
+    loadSystemInfo(),
+  ]);
+}
+
+async function loadSettingsEmails() {
+  const el = document.getElementById('s-email-list');
+  try {
+    const rows = await req('GET', '/accounts/email');
+    if (!rows.length) { el.innerHTML = '<div style="font-size:11px;color:var(--ink3);font-family:\'IBM Plex Mono\',monospace;padding:8px 0">Keine Konten konfiguriert.</div>'; return; }
+    el.innerHTML = rows.map(a => `
+      <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--paper2)">
+        <div style="width:8px;height:8px;border-radius:50%;background:${a.color};flex-shrink:0"></div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;color:var(--ink)">${esc(a.label)}</div>
+          <div style="font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace">${esc(a.email)}</div>
+        </div>
+        <button onclick="deleteEmail(${a.id},'${esc(a.label)}')" style="font-size:10px;color:var(--accent);background:none;border:none;cursor:pointer;font-family:'IBM Plex Mono',monospace">Löschen</button>
+      </div>`).join('');
+  } catch(e) { el.innerHTML = `<span style="color:var(--accent);font-size:11px">${esc(e.message)}</span>`; }
+}
+
+async function loadSettingsCals() {
+  const el = document.getElementById('s-cal-list');
+  try {
+    const rows = await req('GET', '/accounts/calendar');
+    if (!rows.length) { el.innerHTML = '<div style="font-size:11px;color:var(--ink3);font-family:\'IBM Plex Mono\',monospace;padding:8px 0">Keine Kalender konfiguriert.</div>'; return; }
+    el.innerHTML = rows.map(c => `
+      <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--paper2)">
+        <div style="width:8px;height:8px;border-radius:50%;background:${c.color};flex-shrink:0"></div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;color:var(--ink)">${esc(c.label)}</div>
+          <div style="font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(c.url)}</div>
+        </div>
+        <button onclick="deleteCal(${c.id},'${esc(c.label)}')" style="font-size:10px;color:var(--accent);background:none;border:none;cursor:pointer;font-family:'IBM Plex Mono',monospace">Löschen</button>
+      </div>`).join('');
+  } catch(e) { el.innerHTML = `<span style="color:var(--accent);font-size:11px">${esc(e.message)}</span>`; }
+}
+
+async function loadSettingsPersonen() {
+  const el = document.getElementById('s-person-list');
+  try {
+    const rows = await req('GET', '/personen');
+    el.innerHTML = rows.map(p => `
+      <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--paper2)">
+        <div style="flex:1">
+          <div style="font-size:12px;color:var(--ink)">${esc(p.name)}</div>
+          <div style="font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace">${esc(p.rolle)}${p.email?' · '+esc(p.email):''}</div>
+        </div>
+        ${p.rolle !== 'selbst' ? `<button onclick="deletePerson(${p.id},'${esc(p.name)}')" style="font-size:10px;color:var(--accent);background:none;border:none;cursor:pointer;font-family:'IBM Plex Mono',monospace">Entfernen</button>` : ''}
+      </div>`).join('');
+  } catch(e) { el.innerHTML = `<span style="color:var(--accent);font-size:11px">${esc(e.message)}</span>`; }
+}
+
+async function loadSystemInfo() {
+  try {
+    const cfg = await req('GET', '/system/config');
+    const costs = (cfg.token_stats||[]).reduce((s,t)=>s+t.cost_usd,0);
+    document.getElementById('s-system-info').innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        ${[
+          ['E-Mail-Konten', cfg.email_accounts],
+          ['Kalender', cfg.calendars],
+          ['Personen', cfg.personen],
+          ['Sync-Intervall', cfg.sync_interval + ' Min.'],
+          ['Briefing', cfg.briefing_time + ' Uhr'],
+          ['API-Kosten heute', '$' + costs.toFixed(4)],
+        ].map(([l,v]) => `
+          <div style="padding:8px;background:var(--paper);border-radius:var(--r)">
+            <div style="font-size:9px;font-family:'IBM Plex Mono',monospace;color:var(--ink3);text-transform:uppercase;letter-spacing:.1em">${l}</div>
+            <div style="font-size:15px;font-family:'Playfair Display',serif;color:var(--accent);margin-top:2px">${v}</div>
+          </div>`).join('')}
+      </div>`;
+    document.getElementById('s-nc-url').textContent = cfg.nc_url || '–';
+    document.getElementById('s-boox-pfad').textContent = cfg.boox_pfad || '–';
+  } catch(e) {}
+}
+
+// Kalender testen und speichern
+let selectedCalColor = '#8fb87a';
+let discoveredCals = [];
+const COLORS = ['#8fb87a','#7baed4','#d4a853','#c97070','#b07dd4','#d47d9e','#8fb7b4'];
+const SKIP_NAMES = ['inbox', 'geburtstage', 'deck', 'birthday'];
+
+function discoverKalender() {
+  document.getElementById('cal-discover-body').style.display = 'block';
+  document.getElementById('cal-discover-results').style.display = 'none';
+  document.getElementById('m-cal-discover').style.display = 'flex';
+}
+
+async function startDiscovery() {
+  const btn = document.getElementById('cd-btn');
+  btn.textContent = '… suche'; btn.disabled = true;
+  try {
+    const cals = await req('POST', '/accounts/calendar/discover', {
+      url: g('cd-url'), username: g('cd-user'), password: g('cd-pass')
+    });
+    discoveredCals = cals;
+
+    // Bereits eingebundene Kalender laden
+    const existing = await req('GET', '/accounts/calendar');
+    const existingUrls = new Set(existing.map(c => c.url));
+
+    document.getElementById('cal-discover-list').innerHTML = cals.map((c, i) => {
+      const alreadyAdded = existingUrls.has(c.url);
+      const skip = SKIP_NAMES.some(s => c.name.toLowerCase().includes(s));
+      const color = COLORS[i % COLORS.length];
+      return `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--paper2)">
+        <input type="checkbox" id="cal-cb-${i}" value="${i}"
+          ${alreadyAdded ? 'disabled checked' : (!skip ? 'checked' : '')}
+          style="width:16px;height:16px;accent-color:var(--accent);flex-shrink:0"/>
+        <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0"></div>
+        <div style="flex:1">
+          <div style="font-size:12px;color:var(--ink);font-weight:${alreadyAdded?'400':'500'}">${esc(c.name)}
+            ${alreadyAdded ? '<span style="font-size:10px;color:var(--green);font-family:\'IBM Plex Mono\',monospace;font-weight:400"> · bereits eingebunden</span>' : ''}
+          </div>
+          <div style="font-size:10px;color:var(--ink3);font-family:\'IBM Plex Mono\',monospace;margin-top:1px">${esc(c.url.split('/').slice(-2,-1)[0] || c.url)}</div>
+        </div>
+        <div style="width:14px;height:14px;border-radius:50%;background:${color};cursor:pointer;border:2px solid transparent;flex-shrink:0"
+          onclick="this.style.background=prompt('Farbe (hex):',this.style.background)||this.style.background"
+          data-idx="${i}" id="cal-color-${i}"></div>
+      </div>`;
+    }).join('') || '<div style="color:var(--ink3);font-size:12px;padding:16px 0">Keine Kalender gefunden.</div>';
+
+    document.getElementById('cal-discover-body').style.display = 'none';
+    document.getElementById('cal-discover-results').style.display = 'block';
+  } catch(e) {
+    toast('Fehler: ' + e.message, 'err');
+  }
+  finally { btn.textContent = 'Kalender suchen →'; btn.disabled = false; }
+}
+
+async function saveSelectedCals() {
+  const btn = document.getElementById('cd-save-btn');
+  btn.textContent = '… speichere'; btn.disabled = true;
+  const user = g('cd-user');
+  const pass = g('cd-pass');
+  let saved = 0;
+  let errors = 0;
+
+  for (let i = 0; i < discoveredCals.length; i++) {
+    const cb = document.getElementById(`cal-cb-${i}`);
+    if (!cb || !cb.checked || cb.disabled) continue;
+    const cal = discoveredCals[i];
+    const color = document.getElementById(`cal-color-${i}`)?.style.background || COLORS[i % COLORS.length];
+    try {
+      await req('POST', '/accounts/calendar', {
+        label: cal.name, url: cal.url,
+        username: user, password: pass, color
+      });
+      saved++;
+    } catch(e) {
+      console.error('Kalender speichern:', cal.name, e.message);
+      errors++;
+    }
+  }
+
+  btn.textContent = 'Ausgewählte hinzufügen'; btn.disabled = false;
+  closeM('m-cal-discover');
+
+  if (saved > 0) {
+    toast(`${saved} Kalender hinzugefügt ✓`, 'ok');
+    loadSettingsCals();
+    // Sofort synchronisieren
+    setTimeout(() => syncKalender(), 500);
+  }
+  if (errors > 0) toast(`${errors} Fehler beim Speichern`, 'err');
+}
+
+function selectCalColor(color, el) {
+  selectedCalColor = color;
+  document.querySelectorAll('#cal-color-row div').forEach(d => d.style.borderColor = 'transparent');
+  el.style.borderColor = '#333';
+}
+
+async function testEmail() {
+  const el = document.getElementById('em-test-result');
+  el.textContent = 'Teste…'; el.style.color = 'var(--ink3)';
+  try {
+    await req('POST', '/accounts/email/test', {
+      host: g('em-host'), port: parseInt(g('em-port'))||993,
+      username: g('em-user'), password: g('em-pass'), tls: true
+    });
+    el.textContent = '✓ Verbindung erfolgreich'; el.style.color = 'var(--green)';
+  } catch(e) { el.textContent = '✗ ' + e.message; el.style.color = 'var(--accent)'; }
+}
+
+async function saveEmail() {
+  if (!g('em-label')||!g('em-email')||!g('em-host')||!g('em-user')||!g('em-pass')) {
+    toast('Bitte alle Felder ausfüllen', 'err'); return;
+  }
+  try {
+    await req('POST', '/accounts/email', {
+      label: g('em-label'), email: g('em-email'), host: g('em-host'),
+      port: parseInt(g('em-port'))||993, username: g('em-user'),
+      password: g('em-pass'), tls: true, color: '#d4a853'
+    });
+    closeM('m-email'); toast('Konto gespeichert ✓', 'ok');
+    loadSettingsEmails();
+    ['em-label','em-email','em-host','em-user','em-pass'].forEach(id => document.getElementById(id).value='');
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+}
+
+async function deleteEmail(id, label) {
+  if (!confirm(`Konto "${label}" wirklich löschen?`)) return;
+  try {
+    await req('DELETE', `/accounts/email/${id}`);
+    toast('Konto gelöscht', 'ok'); loadSettingsEmails(); loadStats();
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+}
+
+async function testCal() {
+  const el = document.getElementById('cal-test-result');
+  el.textContent = 'Teste…'; el.style.color = 'var(--ink3)';
+  try {
+    const r = await req('POST', '/accounts/calendar/test', {
+      url: g('cal-url'), username: g('cal-user'), password: g('cal-pass')
+    });
+    el.textContent = `✓ Verbunden: ${r.name}`; el.style.color = 'var(--green)';
+  } catch(e) { el.textContent = '✗ ' + e.message; el.style.color = 'var(--accent)'; }
+}
+
+async function saveCal() {
+  if (!g('cal-label')||!g('cal-url')||!g('cal-user')||!g('cal-pass')) {
+    toast('Bitte alle Felder ausfüllen', 'err'); return;
+  }
+  try {
+    await req('POST', '/accounts/calendar', {
+      label: g('cal-label'), url: g('cal-url'),
+      username: g('cal-user'), password: g('cal-pass'), color: selectedCalColor
+    });
+    closeM('m-cal'); toast('Kalender gespeichert ✓', 'ok');
+    loadSettingsCals();
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+}
+
+async function deleteCal(id, label) {
+  if (!confirm(`Kalender "${label}" wirklich löschen?`)) return;
+  try {
+    await req('DELETE', `/accounts/calendar/${id}`);
+    toast('Kalender gelöscht', 'ok'); loadSettingsCals();
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+}
+
+async function syncKalender() {
+  const btn = document.getElementById('cal-sync-btn');
+  btn.textContent = '… synchronisiere'; btn.disabled = true;
+  try {
+    const r = await req('POST', '/sync/calendar');
+    const total = r.reduce ? r.reduce((s,c)=>s+(c.updated||0),0) : 0;
+    toast(`Kalender synchronisiert · ${total} Termine ✓`, 'ok');
+    loadTermine();
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+  finally { btn.textContent = '↺ Kalender jetzt synchronisieren'; btn.disabled = false; }
+}
+
+async function savePerson() {
+  if (!g('p-name')) { toast('Bitte Name eingeben', 'err'); return; }
+  try {
+    await req('POST', '/personen', { name: g('p-name'), rolle: g('p-rolle'), email: g('p-email')||null });
+    closeM('m-person'); toast('Person gespeichert ✓', 'ok');
+    loadSettingsPersonen();
+    ['p-name','p-email'].forEach(id => document.getElementById(id).value='');
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+}
+
+async function deletePerson(id, name) {
+  if (!confirm(`"${name}" aus der Liste entfernen?`)) return;
+  try {
+    await req('DELETE', `/personen/${id}`);
+    toast('Person entfernt', 'ok'); loadSettingsPersonen();
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+}
+
+function openModal(id) { document.getElementById(id).style.display='flex'; }
+
+async function uploadFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const btn = document.getElementById('upload-btn');
+  const result = document.getElementById('upload-result');
+  btn.textContent = `… lade hoch: ${file.name}`;
+  btn.disabled = true;
+  result.textContent = '';
+
+  try {
+    const fd = new FormData();
+    fd.append('file', file, file.name);
+    const r = await fetch('/api/system/upload', {
+      method: 'POST',
+      headers: { 'X-Api-Key': SECRET },
+      body: fd,
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error);
+
+    result.textContent = '✓ ' + data.message;
+    result.style.color = 'var(--green)';
+    toast(data.message, 'ok');
+
+    if (data.restart) {
+      result.textContent += '\nWarte auf Neustart…';
+      // Warten bis Server wieder erreichbar
+      setTimeout(async () => {
+        for (let i = 0; i < 10; i++) {
+          await new Promise(r => setTimeout(r, 2000));
+          try {
+            await fetch('/api/health');
+            result.textContent = '✓ Server neu gestartet und erreichbar.';
+            toast('Server neu gestartet ✓', 'ok');
+            loadSystemInfo();
+            break;
+          } catch(e) {}
+        }
+      }, 1500);
+    } else {
+      // Frontend sofort neu laden
+      setTimeout(() => location.reload(), 1000);
+    }
+  } catch(e) {
+    result.textContent = '✗ ' + e.message;
+    result.style.color = 'var(--accent)';
+    toast('Upload fehlgeschlagen: ' + e.message, 'err');
+  }
+  finally {
+    btn.textContent = '📂 Datei auswählen und hochladen';
+    btn.disabled = false;
+    input.value = '';
+  }
+}
+
+async function serverRestart() {
+  const btn = document.getElementById('restart-btn');
+  btn.textContent = '… startet neu'; btn.disabled = true;
+  try {
+    await req('POST', '/system/restart');
+    toast('Server startet neu…', '');
+    setTimeout(async () => {
+      for (let i = 0; i < 10; i++) {
+        await new Promise(r => setTimeout(r, 2000));
+        try {
+          await fetch('/api/health');
+          toast('Server wieder erreichbar ✓', 'ok');
+          break;
+        } catch(e) {}
+      }
+      btn.textContent = '↺ Server neu starten'; btn.disabled = false;
+    }, 1500);
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); btn.textContent = '↺ Server neu starten'; btn.disabled = false; }
+}
+
+async function loadLog() {
+  const box = document.getElementById('log-box');
+  const btn = document.getElementById('log-btn');
+  if (box.style.display !== 'none') { box.style.display = 'none'; btn.textContent = '📋 Live-Log anzeigen'; return; }
+  btn.textContent = '… lade Log';
+  try {
+    const r = await req('GET', '/system/log');
+    box.textContent = r.log;
+    box.style.display = 'block';
+    box.scrollTop = box.scrollHeight;
+    btn.textContent = '✕ Log schließen';
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); btn.textContent = '📋 Live-Log anzeigen'; }
+}
+
+async function pushTest() {
+  try {
+    const r = await req('POST', '/push/test');
+    if (r.ok) toast('Testbenachrichtigung gesendet ✓', 'ok');
+    else toast('Fehler: ' + (r.error||'unbekannt'), 'err');
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+}
+
+async function pushManuell() {
+  const msg = prompt('Nachricht:');
+  if (!msg) return;
+  const title = prompt('Titel (optional):', 'KI-Assistent') || 'KI-Assistent';
+  try {
+    await req('POST', '/push/send', { title, message: msg });
+    toast('Nachricht gesendet ✓', 'ok');
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+}
+
+async function gitPull() {
+  const btn = document.getElementById('git-pull-btn');
+  const result = document.getElementById('git-pull-result');
+  btn.innerHTML = '<span style="display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px"></span>Lade von GitHub…';
+  btn.disabled = true; result.textContent = '';
+  try {
+    const r = await req('POST', '/system/git-pull');
+    if (r.changed) {
+      result.textContent = '✓ Aktualisiert – startet neu…'; result.style.color = 'var(--green)';
+      toast('Update geladen – Neustart ✓', 'ok');
+      setTimeout(async () => {
+        for (let i=0;i<15;i++) {
+          await new Promise(r=>setTimeout(r,2000));
+          try { await fetch('/api/health'); result.textContent='✓ Server läuft wieder.'; break; } catch(e) {}
+        }
+        btn.innerHTML='↓ Von GitHub laden'; btn.disabled=false;
+      }, 2000);
+    } else {
+      result.textContent = '✓ Bereits aktuell.'; result.style.color='var(--ink3)';
+      btn.innerHTML='↓ Von GitHub laden'; btn.disabled=false;
+    }
+  } catch(e) {
+    result.textContent = '✗ '+e.message; result.style.color='var(--accent)';
+    btn.innerHTML='↓ Von GitHub laden'; btn.disabled=false;
+  }
+}
+
+async function doSync() {
+  toast('Synchronisiere…');
+  try {
+    const r = await req('POST', '/sync');
+    const neu = r.email?.reduce((s,a)=>s+(a.new||0),0)||0;
+    toast(`Sync abgeschlossen · ${neu} neue E-Mails ✓`, 'ok');
+    loadStats(); loadDashboard();
+  } catch(e) { toast('Sync fehlgeschlagen: ' + e.message, 'err'); }
+}
+
+// ── MODALS ─────────────────────────────────────────────────────────────────────
+function closeM(id) { document.getElementById(id).style.display='none'; }
+function bgClose(e,id) { if(e.target.classList.contains('modal-bg')) closeM(id); }
+
+// ── UTILS ──────────────────────────────────────────────────────────────────────
+function g(id){ return document.getElementById(id)?.value?.trim()||''; }
+function esc(s){ if(!s)return''; const d=document.createElement('div');d.textContent=String(s);return d.innerHTML; }
+function fmtDate(iso){ if(!iso)return'–';const d=new Date(iso),n=new Date();return d.toDateString()===n.toDateString()?d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}):d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'}); }
+function fmtDateTime(iso){ return iso?new Date(iso).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'–'; }
+function autoGrow(el){ el.style.height='auto';el.style.height=Math.min(el.scrollHeight,100)+'px'; }
+function setStatus(ok){ document.getElementById('sdot').className='sdot'+(ok?'':' err');document.getElementById('stxt').textContent=ok?'verbunden':'Fehler'; }
+function renderMd(t){ return '<p>'+String(t).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/`(.+?)`/g,'<code>$1</code>').split('\n').filter(l=>l.trim()).join('</p><p>')+'</p>'; }
+async function bodyNachladen() {
+  const btn = document.getElementById('body-nachladen-btn');
+  if (btn) {
+    btn.innerHTML = '<span style="display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px"></span>Lade…';
+    btn.disabled = true;
+  }
+  try {
+    const r = await req('POST', `/emails/${activeEmailId}/body-v2`);
+    if (r.body) {
+      document.getElementById('ev-body').innerHTML = `<div class="email-body-text">${esc(r.body)}</div>`;
+      toast('Body geladen ✓', 'ok');
+    } else {
+      toast(r.message || 'Kein Text gefunden', 'err');
+      if (btn) { btn.textContent = '↓ Text nachladen'; btn.disabled = false; }
+    }
+  } catch(e) {
+    toast('Fehler: ' + e.message, 'err');
+    if (btn) { btn.textContent = '↓ Text nachladen'; btn.disabled = false; }
+  }
+}
+
+let _tt;
+function toast(msg,type=''){ document.querySelector('.toast')?.remove();clearTimeout(_tt);const e=document.createElement('div');e.className='toast '+type;e.textContent=msg;document.body.appendChild(e);_tt=setTimeout(()=>e.remove(),3500); }
+</script>
+</body>
+</html>
