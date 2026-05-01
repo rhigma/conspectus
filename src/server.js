@@ -6,7 +6,7 @@ import cron from 'node-cron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { initSchema, query, queryOne } from './db.js';
-import { syncAllAccounts } from './imap.js';
+import { syncAllAccounts, moveToErledigt } from './imap.js';
 import { chat, executeAction, getTokenStats, emailEinordnen, notizAnalysieren, morgenbriefing } from './ai.js';
 import { ncMkdir, neueRemarkableNotizen, remarkableVerarbeitet, ncDownload, vorgangOrdner } from './nextcloud.js';
 
@@ -130,13 +130,15 @@ app.post('/personen', async (req, res) => {
 app.get('/emails', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 50;
+    const erledigt = req.query.erledigt === '1' ? 1 : 0;
     const rows = await query(`
       SELECT e.*, a.label as account_label, a.color as account_color, v.titel as vorgang_titel
       FROM emails e
       JOIN email_accounts a ON a.id = e.account_id
       LEFT JOIN vorgaenge v ON v.id = e.vorgang_id
+      WHERE e.erledigt = ?
       ORDER BY e.date DESC LIMIT ?
-    `, [limit]);
+    `, [erledigt, limit]);
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -479,6 +481,28 @@ app.get('/emails/:id', async (req, res) => {
 app.post('/emails/:id/archivieren', async (req, res) => {
   try {
     await query('UPDATE emails SET unread = 0 WHERE id = ?', [req.params.id]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/emails/:id/erledigt', async (req, res) => {
+  try {
+    const email = await queryOne(`
+      SELECT e.*, a.host, a.port, a.username, a.password, a.tls
+      FROM emails e JOIN email_accounts a ON a.id = e.account_id
+      WHERE e.id = ?
+    `, [req.params.id]);
+    if (!email) return res.status(404).json({ error: 'Nicht gefunden' });
+
+    await query('UPDATE emails SET erledigt = 1, unread = 0 WHERE id = ?', [req.params.id]);
+
+    // In IMAP-Ordner "Erledigt" verschieben
+    try {
+      await moveToErledigt(email, email.uid);
+    } catch (imapErr) {
+      console.warn('[Erledigt] IMAP-Verschiebung fehlgeschlagen:', imapErr.message);
+    }
+
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

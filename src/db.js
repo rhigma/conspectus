@@ -91,6 +91,7 @@ export async function initSchema() {
       date            DATETIME,
       unread          TINYINT NOT NULL DEFAULT 1,
       flagged         TINYINT NOT NULL DEFAULT 0,
+      erledigt        TINYINT NOT NULL DEFAULT 0,
       anhang_pfade    JSON,
       ki_einordnung   TEXT,
       synced_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -100,6 +101,8 @@ export async function initSchema() {
       FOREIGN KEY (vorgang_id) REFERENCES vorgaenge(id) ON DELETE SET NULL
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
   `);
+  // Migration für bestehende Instanzen
+  await db.execute(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS erledigt TINYINT NOT NULL DEFAULT 0`);
 
   await db.execute(`
     CREATE TABLE IF NOT EXISTS vorgang_eintraege (

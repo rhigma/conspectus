@@ -6,6 +6,7 @@
 <title>Conspectus · Schulleitung</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+<script>if(localStorage.getItem('ki_dark')==='1')document.documentElement.setAttribute('data-theme','dark')</script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -20,6 +21,28 @@
   --shadow:0 2px 8px rgba(26,22,20,.12);
   --shadow2:0 4px 20px rgba(26,22,20,.18);
 }
+[data-theme="dark"]{
+  --ink:#cec8c0;--ink2:#8a827a;--ink3:#4a4440;
+  --paper:#141210;--paper2:#1c1816;--paper3:#24201c;
+  --accent:#c4622d;--accent2:#e07840;--accentl:#2a1508;
+  --green:#4a8a5d;--greenl:#0e1f14;
+  --blue:#5a8ac8;--bluel:#0e1a2a;
+  --gold:#c4a840;--goldl:#1e1808;
+  --border:#2e2a26;--border2:#3a3430;
+  --shadow:0 2px 8px rgba(0,0,0,.5);
+  --shadow2:0 4px 20px rgba(0,0,0,.7);
+}
+[data-theme="dark"] .topbar{background:#0c0a08;border-bottom-color:#1e1a16}
+[data-theme="dark"] .card{background:var(--paper2)}
+[data-theme="dark"] #login{background:#0c0a08}
+[data-theme="dark"] .modal{background:var(--paper2)}
+[data-theme="dark"] .email-item:hover,[data-theme="dark"] .vorgang-item:hover{background:var(--paper3)}
+[data-theme="dark"] .vorgaenge-toolbar{background:var(--paper2)}
+[data-theme="dark"] .detail-header{background:var(--paper2)}
+[data-theme="dark"] select,[data-theme="dark"] input,[data-theme="dark"] textarea{background:var(--paper3);color:var(--ink);border-color:var(--border)}
+[data-theme="dark"] .chat-input-area{background:var(--paper2);border-color:var(--border)}
+[data-theme="dark"] .chat-msg.assistant{background:var(--paper3)}
+[data-theme="dark"] code{background:var(--paper3)}
 html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans',sans-serif;overflow:hidden}
 
 /* ── LOGIN ── */
@@ -359,6 +382,7 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
     </div>
     <button class="top-btn" onclick="doSync()">↺ Sync</button>
     <button class="top-btn" onclick="doBriefing()">☀ Briefing</button>
+    <button class="top-btn" id="dark-toggle" onclick="toggleDarkMode()" title="Dark/Light Mode">◐</button>
     <button class="top-btn" onclick="doLogout()">Abmelden</button>
   </div>
 
@@ -531,6 +555,7 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
             <div class="email-action-title">Aktionen</div>
             <button class="email-action-btn" onclick="document.getElementById('reply-section').style.display='block';document.getElementById('reply-text').focus()">✉ Antworten</button>
             <button class="email-action-btn" onclick="archivieren()">✓ Archivieren</button>
+            <button class="email-action-btn" style="background:var(--greenl);color:var(--green);border-color:var(--green)" onclick="emailErledigen()">✓ Erledigt</button>
             <div style="height:8px"></div>
             <div class="email-action-title">Vorgang zuordnen</div>
             <select class="vorgang-select" id="ev-vorgang-select">
@@ -996,21 +1021,25 @@ async function erledigtDelegation(id) {
   } catch(e) { toast('Fehler: ' + e.message, 'err'); }
 }
 
-let emailFilterUnzugeordnet = false;
+let emailFilter = 'aktiv'; // 'aktiv' | 'unzugeordnet' | 'erledigt'
 
 function toggleEmailFilter() {
-  emailFilterUnzugeordnet = !emailFilterUnzugeordnet;
+  const next = { aktiv: 'unzugeordnet', unzugeordnet: 'erledigt', erledigt: 'aktiv' };
+  const nextLabel = { aktiv: 'Unzugeordnet', unzugeordnet: 'Erledigt', erledigt: 'Aktiv' };
+  emailFilter = next[emailFilter];
   const btn = document.getElementById('email-toggle');
-  btn.textContent = emailFilterUnzugeordnet ? 'Alle' : 'Unzugeordnet';
-  btn.style.borderColor = emailFilterUnzugeordnet ? 'var(--accent)' : 'var(--border)';
-  btn.style.color = emailFilterUnzugeordnet ? 'var(--accent)' : 'var(--ink2)';
+  btn.textContent = nextLabel[emailFilter];
+  btn.style.borderColor = emailFilter !== 'aktiv' ? 'var(--accent)' : 'var(--border)';
+  btn.style.color = emailFilter !== 'aktiv' ? 'var(--accent)' : 'var(--ink2)';
   loadEmails();
 }
 
 async function loadEmails() {
   const el = document.getElementById('email-list');
   try {
-    const url = emailFilterUnzugeordnet ? '/emails/unzugeordnet' : '/emails?limit=8';
+    const url = emailFilter === 'unzugeordnet' ? '/emails/unzugeordnet' :
+                emailFilter === 'erledigt'     ? '/emails?limit=50&erledigt=1' :
+                '/emails?limit=8';
     const rows = await req('GET', url);
     const unread = rows.filter(e => e.unread).length;
     document.getElementById('email-count').textContent = unread + ' ungelesen';
@@ -1143,6 +1172,15 @@ async function archivieren() {
   try {
     await req('POST', `/emails/${activeEmailId}/archivieren`);
     toast('Archiviert ✓', 'ok');
+    loadStats(); loadEmails();
+    showView('dash');
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+}
+
+async function emailErledigen() {
+  try {
+    await req('POST', `/emails/${activeEmailId}/erledigt`);
+    toast('Als erledigt markiert und in IMAP verschoben ✓', 'ok');
     loadStats(); loadEmails();
     showView('dash');
   } catch(e) { toast('Fehler: ' + e.message, 'err'); }
@@ -2013,6 +2051,12 @@ async function bodyNachladen() {
     toast('Fehler: ' + e.message, 'err');
     if (btn) { btn.textContent = '↓ Text nachladen'; btn.disabled = false; }
   }
+}
+
+function toggleDarkMode() {
+  const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+  document.documentElement.setAttribute('data-theme', dark ? 'light' : 'dark');
+  localStorage.setItem('ki_dark', dark ? '0' : '1');
 }
 
 let _tt;

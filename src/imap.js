@@ -151,6 +151,32 @@ async function syncAccount(account) {
   return newCount;
 }
 
+export async function moveToErledigt(account, uid) {
+  const client = new ImapFlow({
+    host: account.host,
+    port: account.port,
+    secure: !!account.tls,
+    auth: { user: account.username, pass: account.password },
+    logger: false,
+    socketTimeout: 20000,
+    connectionTimeout: 15000,
+    disableAutoIdle: true,
+  });
+  client.on('error', () => {});
+  await client.connect();
+  try {
+    try { await client.mailboxCreate('Erledigt'); } catch(e) { /* existiert bereits */ }
+    const lock = await client.getMailboxLock('INBOX');
+    try {
+      await client.messageMove({ uid: `${uid}:${uid}` }, 'Erledigt', { uid: true });
+    } finally {
+      lock.release();
+    }
+  } finally {
+    try { await client.logout(); } catch(e) {}
+  }
+}
+
 export async function getEmailContext(limitPerAccount = 8) {
   const accounts = await query('SELECT * FROM email_accounts WHERE active = 1');
   const lines = [];
