@@ -892,14 +892,15 @@ app.post('/emails/:id/body-v2', async (req, res) => {
 app.post('/system/git-pull', async (req, res) => {
   try {
     const { stdout, stderr } = await execAsync(
-      'cd /opt/ki-assistent && git pull origin main',
+      'git -c safe.directory=/opt/ki-assistent -C /opt/ki-assistent pull origin main',
       { timeout: 30000 }
     );
-    const changed = stdout.includes('Already up to date.') ? false : true;
+    const changed = !stdout.includes('Already up to date.');
     res.json({ ok: true, output: stdout + stderr, changed });
     if (changed) {
-      // Neustart nach kurzer Verzögerung
       setTimeout(() => execAsync('/usr/local/bin/ki-restart').catch(() => {}), 2000);
     }
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    res.status(500).json({ error: e.message, detail: e.stderr || e.stdout || '' });
+  }
 });
