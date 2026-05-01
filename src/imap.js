@@ -76,36 +76,49 @@ async function syncAccount(account) {
       if (total === 0) return 0;
       const from = Math.max(1, total - MAX_EMAILS + 1);
 
+      // Pass 1: Envelopes – neue UIDs ermitteln
+      const neueMsgs = [];
       for await (const msg of client.fetch(`${from}:${total}`, {
         uid: true, flags: true, envelope: true,
       })) {
-        const uid = String(msg.uid);
         const exists = await queryOne(
           'SELECT id FROM emails WHERE account_id = ? AND uid = ?',
-          [account.id, uid]
+          [account.id, String(msg.uid)]
         );
-        if (exists) continue;
+        if (!exists) neueMsgs.push({
+          uid: msg.uid, flags: msg.flags, envelope: msg.envelope,
+        });
+      }
 
-        // Body + Anhänge laden
+      // Pass 2: Body + Anhänge nur für neue E-Mails laden
+      // (client.download() innerhalb des fetch-Loops ist unzuverlässig,
+      // da die IMAP-Verbindung durch den laufenden FETCH belegt ist)
+      for (const msg of neueMsgs) {
         let bodyText = '';
         let anhangPfade = [];
         try {
-          const raw = await client.download(String(msg.seq), undefined, { uid: false });
-          const parsed = await simpleParser(raw.content);
-          bodyText = (parsed.text || '').slice(0, 5000);
-
-          // Anhänge in Nextcloud speichern
-          for (const att of parsed.attachments || []) {
-            if (att.size > 20 * 1024 * 1024) continue; // max 20MB
-            try {
-              const pfad = await speichereAnhang(
-                '/E-Mail-Anhänge',
-                `${uid}_${att.filename || 'anhang'}`,
-                att.content,
-                att.contentType
-              );
-              anhangPfade.push({ name: att.filename, pfad, typ: att.contentType, groesse: att.size });
-            } catch (e) { /* Anhang-Fehler ignorieren */ }
+          for await (const full of client.fetch(
+            { uid: `${msg.uid}:${msg.uid}` },
+            { source: true },
+            { uid: true }
+          )) {
+            const parsed = await simpleParser(full.source);
+            bodyText = (parsed.text || '').slice(0, 5000);
+            if (!bodyText && parsed.html) {
+              bodyText = parsed.html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 5000);
+            }
+            for (const att of parsed.attachments || []) {
+              if (att.size > 20 * 1024 * 1024) continue;
+              try {
+                const pfad = await speichereAnhang(
+                  '/E-Mail-Anhänge',
+                  `${msg.uid}_${att.filename || 'anhang'}`,
+                  att.content,
+                  att.contentType
+                );
+                anhangPfade.push({ name: att.filename, pfad, typ: att.contentType, groesse: att.size });
+              } catch (e) { /* Anhang-Fehler ignorieren */ }
+            }
           }
         } catch (e) { /* Body optional */ }
 
@@ -115,7 +128,7 @@ async function syncAccount(account) {
             (account_id, uid, message_id, from_name, from_email, subject, body_text, date, unread, anhang_pfade)
            VALUES (?,?,?,?,?,?,?,?,?,?)`,
           [
-            account.id, uid,
+            account.id, String(msg.uid),
             env.messageId || null,
             env.from?.[0]?.name || null,
             env.from?.[0]?.address || null,

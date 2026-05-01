@@ -49,6 +49,18 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 .top-btn{padding:5px 12px;background:none;border:1px solid #444;border-radius:var(--r);color:#888;font-family:'IBM Plex Mono',monospace;font-size:10px;cursor:pointer;transition:all .15s;letter-spacing:.04em}
 .top-btn:hover{border-color:var(--accent2);color:var(--accent2)}
+.top-search{position:relative;margin-left:12px}
+.top-search-input{padding:5px 12px;background:rgba(255,255,255,.07);border:1px solid #444;border-radius:var(--r);color:#ccc;font-family:'IBM Plex Mono',monospace;font-size:11px;width:200px;outline:none;transition:border-color .15s}
+.top-search-input::placeholder{color:#666}
+.top-search-input:focus{border-color:var(--accent2);background:rgba(255,255,255,.1)}
+.search-dropdown{position:absolute;top:34px;left:0;width:420px;background:#1e1a18;border:1px solid #444;border-radius:var(--r);box-shadow:0 8px 24px rgba(0,0,0,.5);z-index:200;max-height:480px;overflow-y:auto}
+.search-section{padding:8px 0}
+.search-section-label{font-size:9px;font-family:'IBM Plex Mono',monospace;letter-spacing:.15em;text-transform:uppercase;color:#666;padding:4px 14px 6px}
+.search-item{padding:8px 14px;cursor:pointer;border-left:3px solid transparent;transition:all .1s}
+.search-item:hover{background:rgba(255,255,255,.06);border-left-color:var(--accent2)}
+.search-item-title{font-size:12px;color:#ddd;font-family:'IBM Plex Sans',sans-serif}
+.search-item-meta{font-size:10px;color:#666;font-family:'IBM Plex Mono',monospace;margin-top:2px}
+.search-empty{padding:16px 14px;font-size:11px;color:#666;font-family:'IBM Plex Mono',monospace;text-align:center}
 
 /* SIDEBAR */
 .sidebar{background:var(--paper2);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
@@ -337,6 +349,10 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
 <div id="app">
   <div class="topbar">
     <div class="wordmark">Conspectus</div>
+    <div class="top-search">
+      <input id="top-search-input" class="top-search-input" placeholder="Suchen…" oninput="topSearchDebounced()" autocomplete="off" />
+      <div class="search-dropdown" id="search-dropdown" style="display:none"></div>
+    </div>
     <div class="top-status">
       <div class="sdot" id="sdot"></div>
       <span id="stxt">verbunden</span>
@@ -813,9 +829,6 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
     <div class="mf"><label>An</label>
       <select id="nd-person">
         <option value="">Bitte wählen…</option>
-        
-        
-        <option value="Schulleitung|selbst">Schulleitung (selbst)</option>
       </select>
     </div>
     <div class="mf"><label>Aufgabe</label><textarea id="nd-aufgabe" placeholder="Was soll erledigt werden?"></textarea></div>
@@ -1403,6 +1416,7 @@ async function saveVorgang() {
 
 function openNewDelegation() {
   if (!activeVorgangId) { toast('Kein Vorgang aktiv', 'err'); return; }
+  ladePersonenInModal();
   document.getElementById('m-delegation').style.display='flex';
 }
 async function saveDelegation() {
@@ -1999,6 +2013,94 @@ async function bodyNachladen() {
 
 let _tt;
 function toast(msg,type=''){ document.querySelector('.toast')?.remove();clearTimeout(_tt);const e=document.createElement('div');e.className='toast '+type;e.textContent=msg;document.body.appendChild(e);_tt=setTimeout(()=>e.remove(),3500); }
+
+// ── VOLLTEXT-SUCHE ─────────────────────────────────────────────────────────────
+let _searchTimer;
+function topSearchDebounced() {
+  clearTimeout(_searchTimer);
+  const q = document.getElementById('top-search-input').value.trim();
+  if (q.length < 2) { document.getElementById('search-dropdown').style.display='none'; return; }
+  _searchTimer = setTimeout(() => globalSearch(q), 300);
+}
+
+async function globalSearch(q) {
+  const dd = document.getElementById('search-dropdown');
+  dd.style.display = 'block';
+  dd.innerHTML = '<div class="search-empty">Suche…</div>';
+  try {
+    const r = await req('GET', '/search?q=' + encodeURIComponent(q));
+    if (!r.vorgaenge.length && !r.emails.length && !r.delegationen.length) {
+      dd.innerHTML = '<div class="search-empty">Keine Treffer</div>';
+      return;
+    }
+    let html = '';
+    const prio = ['','🔴','🟡','🟢'];
+    if (r.vorgaenge.length) {
+      html += '<div class="search-section"><div class="search-section-label">Vorgänge</div>';
+      r.vorgaenge.slice(0,5).forEach(v => {
+        html += `<div class="search-item" onclick="searchNav('vorgang',${v.id})">
+          <div class="search-item-title">${prio[v.prioritaet]||''} ${esc(v.titel)}</div>
+          <div class="search-item-meta">${v.status}${v.deadline?' · '+fmtDate(v.deadline):''}</div>
+        </div>`;
+      });
+      html += '</div>';
+    }
+    if (r.emails.length) {
+      html += '<div class="search-section"><div class="search-section-label">E-Mails</div>';
+      r.emails.slice(0,5).forEach(e => {
+        html += `<div class="search-item" onclick="searchNav('email',${e.id})">
+          <div class="search-item-title">${esc(e.subject||'(kein Betreff)')}</div>
+          <div class="search-item-meta">${esc(e.from_name||e.from_email||'')}${e.date?' · '+fmtDate(e.date):''}${e.vorgang_titel?' · '+esc(e.vorgang_titel):''}</div>
+        </div>`;
+      });
+      html += '</div>';
+    }
+    if (r.delegationen.length) {
+      html += '<div class="search-section"><div class="search-section-label">Delegationen</div>';
+      r.delegationen.slice(0,5).forEach(d => {
+        html += `<div class="search-item" onclick="searchNav('vorgang',${d.vorgang_id})">
+          <div class="search-item-title">${esc(d.aufgabe)}</div>
+          <div class="search-item-meta">${esc(d.an_name)} · ${esc(d.vorgang_titel)}${d.deadline?' · bis '+fmtDate(d.deadline):''}</div>
+        </div>`;
+      });
+      html += '</div>';
+    }
+    dd.innerHTML = html;
+  } catch(e) { dd.innerHTML = '<div class="search-empty">Fehler: ' + esc(e.message) + '</div>'; }
+}
+
+function searchNav(typ, id) {
+  document.getElementById('search-dropdown').style.display = 'none';
+  document.getElementById('top-search-input').value = '';
+  if (typ === 'vorgang') { showView('vorgaenge'); setTimeout(() => openVorgang(id), 50); }
+  else if (typ === 'email') { showView('emails'); setTimeout(() => openEmail(id), 50); }
+}
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('.top-search')) {
+    document.getElementById('search-dropdown').style.display = 'none';
+  }
+});
+
+// ── DELEGATIONS-PERSONEN DYNAMISCH ────────────────────────────────────────────
+async function ladePersonenInModal() {
+  try {
+    const personen = await req('GET', '/personen');
+    const sel = document.getElementById('nd-person');
+    sel.innerHTML = '<option value="">Bitte wählen…</option>';
+    for (const p of personen) {
+      const opt = document.createElement('option');
+      opt.value = `${p.name}|${p.rolle}`;
+      opt.textContent = `${p.name} (${p.rolle})`;
+      sel.appendChild(opt);
+    }
+    const self = document.createElement('option');
+    self.value = 'Schulleitung|selbst';
+    self.textContent = 'Schulleitung (selbst)';
+    sel.appendChild(self);
+  } catch(e) { /* Select bleibt leer */ }
+}
+
 </script>
 </body>
 </html>

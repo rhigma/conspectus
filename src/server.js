@@ -8,7 +8,7 @@ import { fileURLToPath } from 'url';
 import { initSchema, query, queryOne } from './db.js';
 import { syncAllAccounts } from './imap.js';
 import { chat, executeAction, getTokenStats, emailEinordnen, notizAnalysieren, morgenbriefing } from './ai.js';
-import { ncMkdir, neueRemarkableNotizen, remarkableVerarbeitet, ncDownload } from './nextcloud.js';
+import { ncMkdir, neueRemarkableNotizen, remarkableVerarbeitet, ncDownload, vorgangOrdner } from './nextcloud.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app    = express();
@@ -272,6 +272,131 @@ app.get('/stats', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── VOLLTEXT-SUCHE ────────────────────────────────────────────────────────────
+app.get('/search', async (req, res) => {
+  try {
+    const q = (req.query.q || '').trim();
+    if (q.length < 2) return res.json({ vorgaenge: [], emails: [], delegationen: [] });
+    const ft = q + '*';
+    const like = `%${q}%`;
+    const [vorgaenge, emails, delegationen] = await Promise.all([
+      query(
+        `SELECT id, titel, status, prioritaet, deadline
+         FROM vorgaenge WHERE MATCH(titel, beschreibung) AGAINST(? IN BOOLEAN MODE) LIMIT 10`,
+        [ft]
+      ),
+      query(
+        `SELECT e.id, e.subject, e.from_name, e.from_email, e.date, e.vorgang_id, v.titel as vorgang_titel
+         FROM emails e LEFT JOIN vorgaenge v ON v.id = e.vorgang_id
+         WHERE MATCH(e.subject, e.body_text) AGAINST(? IN BOOLEAN MODE)
+         ORDER BY e.date DESC LIMIT 10`,
+        [ft]
+      ),
+      query(
+        `SELECT d.id, d.aufgabe, d.an_name, d.deadline, d.status, v.titel as vorgang_titel, v.id as vorgang_id
+         FROM delegationen d JOIN vorgaenge v ON v.id = d.vorgang_id
+         WHERE d.aufgabe LIKE ? OR d.an_name LIKE ? LIMIT 10`,
+        [like, like]
+      ),
+    ]);
+    res.json({ vorgaenge, emails, delegationen });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── BOOX-SYNC ─────────────────────────────────────────────────────────────────
+async function booxNotizVerarbeiten(pfad) {
+  const buffer = await ncDownload(pfad);
+  const analyse = await notizAnalysieren(buffer.toString('base64'), 'application/pdf');
+
+  // Vorgang-ID auflösen: direkt, per Titelsuche, oder neu anlegen
+  let vorgangId = analyse.vorgang_id ? parseInt(analyse.vorgang_id) : null;
+  if (!vorgangId && analyse.vorgang_titel) {
+    const existing = await queryOne(
+      'SELECT id FROM vorgaenge WHERE titel LIKE ? LIMIT 1',
+      [`%${analyse.vorgang_titel}%`]
+    );
+    if (existing) {
+      vorgangId = existing.id;
+    } else {
+      const ncPfad = await vorgangOrdner(analyse.vorgang_titel).catch(() => null);
+      const result = await query(
+        'INSERT INTO vorgaenge (titel, typ, beschreibung, nc_ordner) VALUES (?,?,?,?)',
+        [analyse.vorgang_titel, 'sonstiges', `Aus Boox-Notiz: ${pfad.split('/').pop()}`, ncPfad]
+      );
+      vorgangId = result.insertId;
+    }
+  }
+
+  // Chronologie-Eintrag
+  await query(
+    'INSERT INTO vorgang_eintraege (vorgang_id, typ, titel, inhalt, datei_pfad) VALUES (?,?,?,?,?)',
+    [vorgangId, 'notiz', `Boox: ${pfad.split('/').pop()}`, JSON.stringify(analyse), pfad]
+  );
+
+  // Termine aus Boox-Analyse als events-Einträge anlegen
+  let terminCount = 0;
+  for (const t of analyse.termine || []) {
+    try {
+      const startDt = t.uhrzeit
+        ? new Date(`${t.datum}T${t.uhrzeit}:00`)
+        : new Date(t.datum);
+      if (isNaN(startDt.getTime())) continue;
+      const endDt = new Date(startDt.getTime() + 60 * 60 * 1000);
+      const uid = `boox-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      await query(
+        'INSERT INTO events (vorgang_id, uid, title, start_time, end_time, all_day) VALUES (?,?,?,?,?,?)',
+        [vorgangId, uid, t.titel, startDt.toISOString(), endDt.toISOString(), t.uhrzeit ? 0 : 1]
+      );
+      terminCount++;
+    } catch (e) { console.error('[Boox] Termin-Fehler:', e.message); }
+  }
+
+  // Delegationen aus Boox-Analyse anlegen
+  let delegCount = 0;
+  for (const d of analyse.delegationen || []) {
+    try {
+      const person = await queryOne(
+        'SELECT id, rolle FROM delegations_personen WHERE name = ? AND aktiv = 1',
+        [d.an]
+      );
+      const result = await query(
+        'INSERT INTO delegationen (vorgang_id, person_id, an_name, an_rolle, aufgabe, deadline) VALUES (?,?,?,?,?,?)',
+        [vorgangId, person?.id || null, d.an, person?.rolle || 'sonstiges', d.aufgabe, d.deadline || null]
+      );
+      await query(
+        'INSERT INTO vorgang_eintraege (vorgang_id, typ, titel, inhalt, ref_id) VALUES (?,?,?,?,?)',
+        [vorgangId, 'delegation', `Delegation an ${d.an}`, d.aufgabe, result.insertId]
+      );
+      delegCount++;
+    } catch (e) { console.error('[Boox] Delegation-Fehler:', e.message); }
+  }
+
+  await remarkableVerarbeitet(pfad);
+  console.log(`[Boox] ${pfad.split('/').pop()} → Vorgang #${vorgangId}, ${terminCount} Termine, ${delegCount} Delegationen`);
+  return { pfad, vorgangId, termine: terminCount, delegationen: delegCount, analyse };
+}
+
+app.post('/boox/sync', async (req, res) => {
+  try {
+    const notizen = await neueRemarkableNotizen();
+    const ergebnisse = [];
+    for (const pfad of notizen) {
+      ergebnisse.push(await booxNotizVerarbeiten(pfad));
+    }
+    res.json({ verarbeitet: ergebnisse.length, ergebnisse });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/boox/status', async (req, res) => {
+  try {
+    const eintraege = await query(
+      `SELECT id, vorgang_id, titel, inhalt, datei_pfad, created_at
+       FROM vorgang_eintraege WHERE titel LIKE 'Boox:%' ORDER BY created_at DESC LIMIT 5`
+    );
+    res.json(eintraege);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── CRON ──────────────────────────────────────────────────────────────────────
 const interval = parseInt(process.env.SYNC_INTERVAL_MINUTES) || 5;
 const briefingH = parseInt(process.env.BRIEFING_HOUR) || 6;
@@ -294,21 +419,21 @@ if (!global._cronStarted) {
     catch (e) { console.error('[Briefing] Fehler:', e.message); }
   });
 
-  // reMarkable-Check (stündlich)
+  // Boox-Notizen (stündlich zur vollen Stunde)
   cron.schedule('0 * * * *', async () => {
     try {
       const notizen = await neueRemarkableNotizen();
-      for (const pfad of notizen) {
-        const buffer = await ncDownload(pfad);
-        const analyse = await notizAnalysieren(buffer.toString('base64'), 'application/pdf');
-        await query(
-          'INSERT INTO vorgang_eintraege (vorgang_id, typ, titel, inhalt, datei_pfad) VALUES (?,?,?,?,?)',
-          [analyse.vorgang_id || null, 'notiz', `reMarkable: ${pfad.split('/').pop()}`, JSON.stringify(analyse), pfad]
-        );
-        await remarkableVerarbeitet(pfad);
-        console.log('[reMarkable] Verarbeitet:', pfad);
-      }
-    } catch (e) { /* reMarkable optional */ }
+      for (const pfad of notizen) await booxNotizVerarbeiten(pfad);
+    } catch (e) { /* Boox optional */ }
+  });
+
+  // Kalender-Sync (stündlich, versetzt zu Boox)
+  cron.schedule('15 * * * *', async () => {
+    try {
+      const { syncAllCalendars } = await import('./caldav.js');
+      await syncAllCalendars();
+      console.log('[Kalender] Auto-Sync OK');
+    } catch (e) { console.error('[Kalender] Sync Fehler:', e.message); }
   });
 }
 
