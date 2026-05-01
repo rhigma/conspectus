@@ -172,6 +172,8 @@ Analysiere diese E-Mail und entscheide:
 1. Gehört sie zu einem bestehenden Vorgang? Wenn ja, welchem?
 2. Sollte ein neuer Vorgang angelegt werden? Wenn ja, wie heißt er (Schema: "Thema Jahr" oder "Thema Datum")?
 3. Ist die E-Mail unwichtig / Spam / Newsletter? Dann "ignorieren".
+4. Extrahiere 2–4 Schlagworte (Substantive, deutsch, z.B. "Brandschutz", "Stundenplan", "Elternabend", "Personal").
+5. Bewerte die Dringlichkeit: "dringend" (Handlungsbedarf heute/diese Woche), "normal" (reguläre Schulkommunikation), "info" (zur Kenntnis, kein Handlungsbedarf).
 
 Bestehende Vorgänge:
 ${vorgaenge.map(v => `- #${v.id}: ${v.titel} [${v.typ}]`).join('\n') || 'Keine'}
@@ -183,11 +185,11 @@ Datum: ${email.date ? new Date(email.date).toLocaleString('de-DE') : '?'}
 Inhalt: ${(email.body_text || '').slice(0, 800)}
 
 Antworte NUR mit JSON:
-{"einordnung":"vorgang_zuordnen"|"vorgang_anlegen"|"ignorieren","vorgang_id":null,"vorgang_titel":"...","begruendung":"...","prioritaet":1|2|3}`;
+{"einordnung":"vorgang_zuordnen"|"vorgang_anlegen"|"ignorieren","vorgang_id":null,"vorgang_titel":"...","begruendung":"...","prioritaet":1|2|3,"schlagworte":["Wort1","Wort2"],"ki_prioritaet":"dringend"|"normal"|"info"}`;
 
   const response = await client.messages.create({
     model: MODEL_FAST,
-    max_tokens: 300,
+    max_tokens: 400,
     messages: [{ role: 'user', content: prompt }],
   });
 
