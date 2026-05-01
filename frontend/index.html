@@ -233,6 +233,34 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
 /* DETAIL SIDEBAR */
 .detail-sidebar{display:flex;flex-direction:column;gap:12px}
 
+/* ── E-MAIL VERWALTUNG ── */
+#v-emails{overflow:hidden}
+.emails-toolbar{padding:14px 20px;border-bottom:1px solid var(--border);background:#fff;display:flex;flex-direction:column;gap:10px}
+.emails-toolbar-row{display:flex;gap:10px;align-items:center}
+.emails-toolbar h2{font-family:'Playfair Display',serif;font-size:20px;flex:1}
+.theme-chips{display:flex;gap:6px;flex-wrap:wrap;padding:0 0 2px}
+.theme-chip{padding:4px 12px;border:1px solid var(--border);border-radius:20px;font-family:'IBM Plex Mono',monospace;font-size:10px;cursor:pointer;transition:all .15s;color:var(--ink2);background:var(--paper);white-space:nowrap;letter-spacing:.03em}
+.theme-chip:hover{border-color:var(--accent2);color:var(--accent2)}
+.theme-chip.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.theme-chip .chip-count{opacity:.7;margin-left:4px}
+.emails-list{flex:1;overflow-y:auto}
+.emails-list::-webkit-scrollbar{width:4px}
+.emails-list::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+.eml-row{display:flex;align-items:center;gap:12px;padding:10px 20px;border-bottom:1px solid var(--paper2);cursor:pointer;transition:background .1s}
+.eml-row:hover{background:var(--paper2)}
+.eml-row.erledigt{opacity:.45}
+.eml-dot{width:7px;height:7px;border-radius:50%;background:var(--border2);flex-shrink:0}
+.eml-dot.unread{background:var(--accent2)}
+.eml-main{flex:1;min-width:0}
+.eml-from{font-size:12px;font-weight:500;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.eml-subj{font-size:12px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.eml-side{text-align:right;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:3px}
+.eml-vtag{font-size:9px;padding:2px 8px;border-radius:10px;background:var(--bluel);color:var(--blue);font-family:'IBM Plex Mono',monospace;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.eml-vtag.unzug{background:var(--paper3);color:var(--ink3)}
+.eml-vtag.erledigt-tag{background:var(--greenl);color:var(--green)}
+.eml-date{font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace}
+[data-theme="dark"] .emails-toolbar{background:var(--paper2)}
+
 /* ── CHAT ── */
 #v-chat{overflow:hidden}
 .chat-header{padding:12px 20px;border-bottom:1px solid var(--border);background:#fff;display:flex;align-items:center;gap:10px}
@@ -391,6 +419,7 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
       <div class="nav-label">Navigation</div>
       <div class="nav-item active" id="n-dash" onclick="showView('dash')"><span class="nav-icon">⊞</span>Dashboard</div>
       <div class="nav-item" id="n-vorgaenge" onclick="showView('vorgaenge')"><span class="nav-icon">◈</span>Vorgänge</div>
+      <div class="nav-item" id="n-emails" onclick="showView('emails')"><span class="nav-icon">✉</span>E-Mails</div>
       <div class="nav-item" id="n-chat" onclick="showView('chat')"><span class="nav-icon">◻</span>KI-Assistent</div>
       <div class="nav-item" id="n-einstellungen" onclick="showView('einstellungen')"><span class="nav-icon">⚙</span>Einstellungen</div>
     </div>
@@ -474,6 +503,20 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
         <button class="new-vorgang-btn" onclick="openNewVorgang()">+ Neuer Vorgang</button>
       </div>
       <div class="vorgaenge-list" id="vorgaenge-list"></div>
+    </div>
+
+    <!-- E-MAIL VERWALTUNG -->
+    <div class="view" id="v-emails">
+      <div class="emails-toolbar">
+        <div class="emails-toolbar-row">
+          <h2>E-Mails</h2>
+          <input class="search-input" id="emails-search" placeholder="Suchen…" oninput="filterEmailsView()" style="width:200px"/>
+          <button class="filter-btn" id="emails-erledigt-toggle" onclick="toggleEmailsErledigt()">Nicht erledigt</button>
+          <span id="emails-count" style="font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace"></span>
+        </div>
+        <div class="theme-chips" id="emails-chips"></div>
+      </div>
+      <div class="emails-list" id="emails-list-full"></div>
     </div>
 
     <!-- VORGANG DETAIL -->
@@ -950,6 +993,7 @@ function showView(v) {
   if (v === 'vorgaenge') loadVorgaenge();
   if (v === 'dash') { loadStats(); loadDashboard(); }
   if (v === 'einstellungen') loadEinstellungen();
+  if (v === 'emails') loadEmailsView();
 }
 
 // ── STATS ──────────────────────────────────────────────────────────────────────
@@ -2061,6 +2105,98 @@ function toggleDarkMode() {
 
 let _tt;
 function toast(msg,type=''){ document.querySelector('.toast')?.remove();clearTimeout(_tt);const e=document.createElement('div');e.className='toast '+type;e.textContent=msg;document.body.appendChild(e);_tt=setTimeout(()=>e.remove(),3500); }
+
+// ── E-MAIL VERWALTUNG ─────────────────────────────────────────────────────────
+let _emlNurAktiv = true;      // false = zeige auch erledigte
+let _emlThema = null;          // null = alle, 0 = unzugeordnet, N = vorgang_id
+let _emlDaten = [];            // gecachte Rohdaten
+
+async function loadEmailsView() {
+  const list = document.getElementById('emails-list-full');
+  list.innerHTML = '<div class="loading-row"><div class="spin"></div>Lade…</div>';
+  document.getElementById('emails-chips').innerHTML = '';
+
+  const erledigtParam = _emlNurAktiv ? '0' : '';
+  const themenUrl = '/emails/themen' + (_emlNurAktiv ? '?erledigt=0' : '');
+  const emailsUrl = '/emails?limit=500' + (_emlNurAktiv ? '&erledigt=0' : '');
+
+  try {
+    const [themen, emails] = await Promise.all([
+      req('GET', themenUrl),
+      req('GET', emailsUrl),
+    ]);
+    _emlDaten = emails;
+    renderEmailChips(themen);
+    renderEmailsView();
+  } catch(e) {
+    list.innerHTML = '<div class="empty">Fehler: ' + esc(e.message) + '</div>';
+  }
+}
+
+function renderEmailChips(themen) {
+  const chips = document.getElementById('emails-chips');
+  const mk = (label, val, count) => {
+    const c = document.createElement('div');
+    c.className = 'theme-chip' + (_emlThema === val ? ' active' : '');
+    c.innerHTML = esc(label) + (count != null ? `<span class="chip-count">${count}</span>` : '');
+    c.onclick = () => { _emlThema = _emlThema === val ? null : val; renderEmailChips(themen); renderEmailsView(); };
+    return c;
+  };
+  chips.innerHTML = '';
+  chips.appendChild(mk('Alle', null, _emlDaten.length));
+  if (themen.unzugeordnet > 0) chips.appendChild(mk('Unzugeordnet', 0, themen.unzugeordnet));
+  for (const v of themen.vorgaenge) chips.appendChild(mk(v.titel, v.id, v.count));
+}
+
+function filterEmailsView() { renderEmailsView(); }
+
+function renderEmailsView() {
+  const q = (document.getElementById('emails-search')?.value || '').toLowerCase();
+  let rows = _emlDaten;
+
+  if (_emlThema === 0) rows = rows.filter(e => !e.vorgang_id);
+  else if (_emlThema != null) rows = rows.filter(e => e.vorgang_id === _emlThema);
+
+  if (q) rows = rows.filter(e =>
+    (e.subject||'').toLowerCase().includes(q) ||
+    (e.from_name||'').toLowerCase().includes(q) ||
+    (e.from_email||'').toLowerCase().includes(q)
+  );
+
+  document.getElementById('emails-count').textContent = rows.length + ' E-Mails';
+
+  if (!rows.length) {
+    document.getElementById('emails-list-full').innerHTML =
+      '<div class="empty"><div class="empty-icon">✉</div>Keine E-Mails</div>';
+    return;
+  }
+
+  document.getElementById('emails-list-full').innerHTML = rows.map(e => `
+    <div class="eml-row${e.erledigt?' erledigt':''}" onclick="openEmail(${e.id},'emails')">
+      <div class="eml-dot${e.unread&&!e.erledigt?' unread':''}"></div>
+      <div class="eml-main">
+        <div class="eml-from">${esc(e.from_name||e.from_email||'?')}</div>
+        <div class="eml-subj">${esc(e.subject||'(kein Betreff)')}</div>
+      </div>
+      <div class="eml-side">
+        ${e.erledigt
+          ? '<div class="eml-vtag erledigt-tag">Erledigt</div>'
+          : e.vorgang_titel
+            ? `<div class="eml-vtag">${esc(e.vorgang_titel)}</div>`
+            : '<div class="eml-vtag unzug">Unzugeordnet</div>'}
+        <div class="eml-date">${fmtDate(e.date)}</div>
+      </div>
+    </div>`).join('');
+}
+
+function toggleEmailsErledigt() {
+  _emlNurAktiv = !_emlNurAktiv;
+  const btn = document.getElementById('emails-erledigt-toggle');
+  btn.textContent = _emlNurAktiv ? 'Nicht erledigt' : 'Alle';
+  btn.classList.toggle('active', !_emlNurAktiv);
+  _emlThema = null;
+  loadEmailsView();
+}
 
 // ── VOLLTEXT-SUCHE ─────────────────────────────────────────────────────────────
 let _searchTimer;

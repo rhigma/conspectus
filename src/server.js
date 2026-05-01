@@ -131,15 +131,46 @@ app.get('/emails', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 50;
     const erledigt = req.query.erledigt === '1' ? 1 : 0;
+    const params = [erledigt];
+    let where = 'WHERE e.erledigt = ?';
+
+    if (req.query.vorgang_id === '0') {
+      where += ' AND e.vorgang_id IS NULL';
+    } else if (req.query.vorgang_id) {
+      where += ' AND e.vorgang_id = ?';
+      params.push(parseInt(req.query.vorgang_id));
+    }
+
+    params.push(limit);
     const rows = await query(`
       SELECT e.*, a.label as account_label, a.color as account_color, v.titel as vorgang_titel
       FROM emails e
       JOIN email_accounts a ON a.id = e.account_id
       LEFT JOIN vorgaenge v ON v.id = e.vorgang_id
-      WHERE e.erledigt = ?
+      ${where}
       ORDER BY e.date DESC LIMIT ?
-    `, [erledigt, limit]);
+    `, params);
     res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/emails/themen', async (req, res) => {
+  try {
+    const erledigt = req.query.erledigt === '1' ? 1 : 0;
+    const [vorgaenge, unzugeordnet] = await Promise.all([
+      query(
+        `SELECT v.id, v.titel, COUNT(e.id) as count
+         FROM vorgaenge v JOIN emails e ON e.vorgang_id = v.id
+         WHERE e.erledigt = ?
+         GROUP BY v.id ORDER BY count DESC LIMIT 20`,
+        [erledigt]
+      ),
+      queryOne(
+        'SELECT COUNT(*) as count FROM emails WHERE vorgang_id IS NULL AND erledigt = ?',
+        [erledigt]
+      ),
+    ]);
+    res.json({ vorgaenge, unzugeordnet: unzugeordnet.count });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
