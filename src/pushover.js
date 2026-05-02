@@ -1,9 +1,18 @@
 import fetch from 'node-fetch';
+import { queryOne } from './db.js';
 
 const PUSHOVER_API = 'https://api.pushover.net/1/messages.json';
 
-const TOKEN = () => process.env.PUSHOVER_TOKEN;
-const USER  = () => process.env.PUSHOVER_USER;
+async function getCredentials() {
+  const [tokenRow, userRow] = await Promise.all([
+    queryOne("SELECT value FROM settings WHERE `key` = 'pushover_token'"),
+    queryOne("SELECT value FROM settings WHERE `key` = 'pushover_user'"),
+  ]);
+  return {
+    token: tokenRow?.value || process.env.PUSHOVER_TOKEN,
+    user:  userRow?.value  || process.env.PUSHOVER_USER,
+  };
+}
 
 /**
  * Sendet eine Pushover-Benachrichtigung.
@@ -17,9 +26,11 @@ const USER  = () => process.env.PUSHOVER_USER;
  */
 export async function push(title, message, opts = {}) {
   try {
+    const { token, user } = await getCredentials();
+    if (!token || !user) throw new Error('Pushover-Zugangsdaten fehlen (Token + User Key in Einstellungen konfigurieren)');
     const body = new URLSearchParams({
-      token:   TOKEN(),
-      user:    USER(),
+      token,
+      user,
       title:   title.slice(0, 250),
       message: message.slice(0, 1024),
       priority: String(opts.priority ?? 0),

@@ -718,9 +718,18 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
         <!-- PUSHOVER -->
         <div class="card">
           <div class="card-header"><span class="card-title">🔔 Pushover</span></div>
-          <div style="font-size:11px;color:var(--ink2);line-height:1.65;margin-bottom:12px">
-            Benachrichtigungen direkt aufs Handy:<br>
-            Morgen-Briefing · Überfällige Delegationen · Boox-Notizen · Termin-Erinnerungen (30 Min.)
+          <div style="display:grid;gap:8px;margin-bottom:12px">
+            <div>
+              <div style="font-size:10px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.1em;color:var(--ink3);margin-bottom:4px">App Token</div>
+              <div style="display:flex;gap:6px">
+                <input id="s-push-token" type="password" placeholder="aXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" style="flex:1;padding:7px 8px;border:1px solid var(--border);border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:11px;background:var(--paper);color:var(--ink)"/>
+                <button onclick="savePushoverCreds()" style="padding:7px 12px;background:var(--accent);color:#fff;border:none;border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:10px;cursor:pointer;white-space:nowrap">Speichern</button>
+              </div>
+            </div>
+            <div>
+              <div style="font-size:10px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.1em;color:var(--ink3);margin-bottom:4px">User Key</div>
+              <input id="s-push-user" type="password" placeholder="uXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" style="width:100%;padding:7px 8px;border:1px solid var(--border);border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:11px;background:var(--paper);color:var(--ink)"/>
+            </div>
           </div>
           <div style="display:grid;gap:6px">
             <button onclick="pushTest()" class="email-action-btn">📱 Testbenachrichtigung senden</button>
@@ -1883,7 +1892,29 @@ async function loadEinstellungen() {
     loadSettingsPersonen(),
     loadSystemInfo(),
     loadTodoKalenderSetting(),
+    loadPushoverSettings(),
   ]);
+}
+
+async function loadPushoverSettings() {
+  try {
+    const s = await req('GET', '/settings');
+    if (s.pushover_token) document.getElementById('s-push-token').value = s.pushover_token;
+    if (s.pushover_user)  document.getElementById('s-push-user').value  = s.pushover_user;
+  } catch(_) {}
+}
+
+async function savePushoverCreds() {
+  const token = document.getElementById('s-push-token').value.trim();
+  const user  = document.getElementById('s-push-user').value.trim();
+  if (!token || !user) { toast('Bitte Token und User Key eingeben', 'err'); return; }
+  try {
+    await Promise.all([
+      req('PUT', '/settings/pushover_token', { value: token }),
+      req('PUT', '/settings/pushover_user',  { value: user }),
+    ]);
+    toast('Pushover-Zugangsdaten gespeichert ✓', 'ok');
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
 }
 
 async function loadTodoKalenderSetting() {
