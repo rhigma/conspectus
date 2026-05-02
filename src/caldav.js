@@ -200,8 +200,10 @@ export async function createCalDavEvent(calendarId, { uid, title, start, end, de
   const auth = 'Basic ' + Buffer.from(`${cal.username}:${cal.password}`).toString('base64');
   const { default: fetch } = await import('node-fetch');
 
-  const startDate = new Date(start);
-  const endDate = end ? new Date(end) : new Date(startDate.getTime() + 3600000);
+  // start/end from datetime-local ("YYYY-MM-DDTHH:MM", no timezone) → already Berlin local time.
+  // Going through new Date() on a UTC server would misinterpret them as UTC and add +2h.
+  const startIcal = toIcalBerlin(start);
+  const endIcal   = end ? toIcalBerlin(end) : icalAddHour(startIcal);
 
   const ics = [
     'BEGIN:VCALENDAR',
@@ -210,8 +212,8 @@ export async function createCalDavEvent(calendarId, { uid, title, start, end, de
     'BEGIN:VEVENT',
     `UID:${uid}`,
     `DTSTAMP:${formatIcal(new Date())}`,
-    `DTSTART;TZID=Europe/Berlin:${formatIcalLocal(startDate)}`,
-    `DTEND;TZID=Europe/Berlin:${formatIcalLocal(endDate)}`,
+    `DTSTART;TZID=Europe/Berlin:${startIcal}`,
+    `DTEND;TZID=Europe/Berlin:${endIcal}`,
     `SUMMARY:${escapeIcal(title)}`,
     description ? `DESCRIPTION:${escapeIcal(description)}` : null,
     'END:VEVENT',
@@ -248,6 +250,27 @@ function formatIcalLocal(date) {
   const pad = n => String(n).padStart(2, '0');
   const d = new Date(date.toLocaleString('en-US', { timeZone: 'Europe/Berlin' }));
   return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
+}
+
+// "YYYY-MM-DDTHH:MM" (datetime-local, already Berlin) → "YYYYMMDDTHHMMSS"
+// "...Z" / full ISO (UTC) → convert to Berlin via formatIcalLocal
+function toIcalBerlin(str) {
+  if (!str) return null;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(str)) {
+    return str.slice(0, 16).replace(/-/g, '').replace(':', '') + '00';
+  }
+  return formatIcalLocal(new Date(str));
+}
+
+// Add exactly one hour to an iCal local time string ("YYYYMMDDTHHMMSS")
+function icalAddHour(ical) {
+  const pad = n => String(n).padStart(2, '0');
+  const dt = new Date(Date.UTC(
+    parseInt(ical.slice(0, 4)), parseInt(ical.slice(4, 6)) - 1, parseInt(ical.slice(6, 8)),
+    parseInt(ical.slice(9, 11)), parseInt(ical.slice(11, 13))
+  ));
+  dt.setUTCHours(dt.getUTCHours() + 1);
+  return `${dt.getUTCFullYear()}${pad(dt.getUTCMonth()+1)}${pad(dt.getUTCDate())}T${pad(dt.getUTCHours())}${pad(dt.getUTCMinutes())}00`;
 }
 
 function escapeIcal(str) {
