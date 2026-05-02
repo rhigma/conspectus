@@ -131,8 +131,14 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
 .card-count{font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace}
 
 /* BRIEFING */
-.briefing-text{font-size:13px;line-height:1.75;color:var(--ink2);white-space:pre-wrap}
-.briefing-text strong,.briefing-bold{color:var(--ink);font-weight:600}
+.briefing-text{font-size:13px;line-height:1.75;color:var(--ink2)}
+.briefing-text h2,.bubble h2{font-family:'Playfair Display',serif;font-size:15px;color:var(--ink);margin:14px 0 4px;font-weight:600}
+.briefing-text h3,.bubble h3{font-family:'IBM Plex Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink3);margin:12px 0 4px}
+.briefing-text h2:first-child,.bubble h2:first-child,.briefing-text h3:first-child,.bubble h3:first-child{margin-top:0}
+.briefing-text ul,.briefing-text ol,.bubble ul,.bubble ol{padding-left:18px;margin:4px 0 8px}
+.briefing-text li,.bubble li{margin:2px 0}
+.briefing-text hr,.bubble hr{border:none;border-top:1px solid var(--border);margin:10px 0}
+.briefing-text strong,.briefing-bold,.bubble strong{color:var(--ink);font-weight:600}
 
 /* E-MAIL ROWS */
 .email-row{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--paper2);cursor:pointer;transition:background .1s;align-items:flex-start}
@@ -2362,7 +2368,33 @@ function fmtDate(iso){ if(!iso)return'–';const d=new Date(iso),n=new Date();re
 function fmtDateTime(iso){ return iso?new Date(iso).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'–'; }
 function autoGrow(el){ el.style.height='auto';el.style.height=Math.min(el.scrollHeight,100)+'px'; }
 function setStatus(ok){ document.getElementById('sdot').className='sdot'+(ok?'':' err');document.getElementById('stxt').textContent=ok?'verbunden':'Fehler'; }
-function renderMd(t){ return '<p>'+String(t).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/`(.+?)`/g,'<code>$1</code>').split('\n').filter(l=>l.trim()).join('</p><p>')+'</p>'; }
+function renderMd(t) {
+  if (!t) return '';
+  const esc2 = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const inline = s => esc2(s)
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g,'<em>$1</em>')
+    .replace(/`(.+?)`/g,'<code>$1</code>');
+  const lines = String(t).split('\n');
+  const out = [];
+  let listTag = null;
+  const closeList = () => { if (listTag) { out.push(`</${listTag}>`); listTag = null; } };
+  for (const raw of lines) {
+    const l = raw.trim();
+    if (!l) { closeList(); continue; }
+    const h3 = l.match(/^###+ (.+)/), h2 = l.match(/^## (.+)/), h1 = l.match(/^# (.+)/);
+    const ul = l.match(/^[-*] (.+)/), ol = l.match(/^\d+\. (.+)/);
+    if (h3)      { closeList(); out.push(`<h3>${inline(h3[1])}</h3>`); }
+    else if (h2) { closeList(); out.push(`<h2>${inline(h2[1])}</h2>`); }
+    else if (h1) { closeList(); out.push(`<h2>${inline(h1[1])}</h2>`); }
+    else if (/^---+$/.test(l)) { closeList(); out.push('<hr>'); }
+    else if (ul) { if (listTag!=='ul'){closeList();out.push('<ul>');listTag='ul';} out.push(`<li>${inline(ul[1])}</li>`); }
+    else if (ol) { if (listTag!=='ol'){closeList();out.push('<ol>');listTag='ol';} out.push(`<li>${inline(ol[1])}</li>`); }
+    else         { closeList(); out.push(`<p>${inline(l)}</p>`); }
+  }
+  closeList();
+  return out.join('');
+}
 async function bodyNachladen() {
   const btn = document.getElementById('body-nachladen-btn');
   if (btn) {
