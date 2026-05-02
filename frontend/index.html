@@ -138,6 +138,10 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
 .briefing-text ul,.briefing-text ol,.bubble ul,.bubble ol{padding-left:18px;margin:4px 0 8px}
 .briefing-text li,.bubble li{margin:2px 0}
 .briefing-text hr,.bubble hr{border:none;border-top:1px solid var(--border);margin:10px 0}
+.briefing-text table,.bubble table{border-collapse:collapse;width:100%;margin:8px 0;font-size:12px}
+.briefing-text th,.bubble th{text-align:left;padding:5px 10px;background:var(--paper2);color:var(--ink);font-family:'IBM Plex Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.06em;border-bottom:2px solid var(--border2)}
+.briefing-text td,.bubble td{padding:5px 10px;border-bottom:1px solid var(--paper2);color:var(--ink2)}
+.briefing-text tr:last-child td,.bubble tr:last-child td{border-bottom:none}
 .briefing-text strong,.briefing-bold,.bubble strong{color:var(--ink);font-weight:600}
 
 /* E-MAIL ROWS */
@@ -2370,29 +2374,48 @@ function autoGrow(el){ el.style.height='auto';el.style.height=Math.min(el.scroll
 function setStatus(ok){ document.getElementById('sdot').className='sdot'+(ok?'':' err');document.getElementById('stxt').textContent=ok?'verbunden':'Fehler'; }
 function renderMd(t) {
   if (!t) return '';
-  const esc2 = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const inline = s => esc2(s)
+  const inline = s => s
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
     .replace(/\*(.+?)\*/g,'<em>$1</em>')
     .replace(/`(.+?)`/g,'<code>$1</code>');
+  const cells = row => row.replace(/^\||\|$/g,'').split('|').map(c => inline(c.trim()));
+  const isSep  = row => /^[\|\-\:\s]+$/.test(row);
+
   const lines = String(t).split('\n');
   const out = [];
-  let listTag = null;
-  const closeList = () => { if (listTag) { out.push(`</${listTag}>`); listTag = null; } };
+  let listTag = null, tableRows = [];
+
+  const closeList  = () => { if (listTag)       { out.push(`</${listTag}>`); listTag = null; } };
+  const closeTable = () => {
+    if (!tableRows.length) return;
+    const [head, , ...body] = tableRows;
+    out.push('<table><thead><tr>' + cells(head).map(c=>`<th>${c}</th>`).join('') + '</tr></thead>');
+    if (body.length) {
+      out.push('<tbody>');
+      for (const row of body) out.push('<tr>' + cells(row).map(c=>`<td>${c}</td>`).join('') + '</tr>');
+      out.push('</tbody>');
+    }
+    out.push('</table>');
+    tableRows = [];
+  };
+
   for (const raw of lines) {
     const l = raw.trim();
+    if (l.startsWith('|')) { closeList(); tableRows.push(l); continue; }
+    closeTable();
     if (!l) { closeList(); continue; }
-    const h3 = l.match(/^###+ (.+)/), h2 = l.match(/^## (.+)/), h1 = l.match(/^# (.+)/);
-    const ul = l.match(/^[-*] (.+)/), ol = l.match(/^\d+\. (.+)/);
-    if (h3)      { closeList(); out.push(`<h3>${inline(h3[1])}</h3>`); }
-    else if (h2) { closeList(); out.push(`<h2>${inline(h2[1])}</h2>`); }
-    else if (h1) { closeList(); out.push(`<h2>${inline(h1[1])}</h2>`); }
-    else if (/^---+$/.test(l)) { closeList(); out.push('<hr>'); }
-    else if (ul) { if (listTag!=='ul'){closeList();out.push('<ul>');listTag='ul';} out.push(`<li>${inline(ul[1])}</li>`); }
-    else if (ol) { if (listTag!=='ol'){closeList();out.push('<ol>');listTag='ol';} out.push(`<li>${inline(ol[1])}</li>`); }
+    const h3=l.match(/^###+ (.+)/),h2=l.match(/^## (.+)/),h1=l.match(/^# (.+)/);
+    const ul=l.match(/^[-*] (.+)/),ol=l.match(/^\d+\. (.+)/);
+    if      (h3)              { closeList(); out.push(`<h3>${inline(h3[1])}</h3>`); }
+    else if (h2)              { closeList(); out.push(`<h2>${inline(h2[1])}</h2>`); }
+    else if (h1)              { closeList(); out.push(`<h2>${inline(h1[1])}</h2>`); }
+    else if (/^---+$/.test(l)){ closeList(); out.push('<hr>'); }
+    else if (ul) { if(listTag!=='ul'){closeList();out.push('<ul>');listTag='ul';} out.push(`<li>${inline(ul[1])}</li>`); }
+    else if (ol) { if(listTag!=='ol'){closeList();out.push('<ol>');listTag='ol';} out.push(`<li>${inline(ol[1])}</li>`); }
     else         { closeList(); out.push(`<p>${inline(l)}</p>`); }
   }
-  closeList();
+  closeList(); closeTable();
   return out.join('');
 }
 async function bodyNachladen() {
