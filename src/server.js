@@ -81,6 +81,17 @@ app.get('/vorgaenge/:id', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+app.post('/vorgaenge/:id/eintraege', async (req, res) => {
+  try {
+    const { typ, titel, inhalt } = req.body;
+    const result = await query(
+      'INSERT INTO vorgang_eintraege (vorgang_id, typ, titel, inhalt) VALUES (?,?,?,?)',
+      [req.params.id, typ || 'notiz', titel, inhalt || null]
+    );
+    res.json({ id: result.insertId });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.put('/vorgaenge/:id', async (req, res) => {
   try {
     const { titel, typ, status, prioritaet, deadline, beschreibung } = req.body;

@@ -1781,9 +1781,8 @@ function openNewNotiz() {
 async function saveNotiz() {
   if (!g('nn-titel') || !g('nn-inhalt')) { toast('Bitte Titel und Inhalt eingeben', 'err'); return; }
   try {
-    await req('POST', '/chat', {
-      text: `Bitte lege folgende Notiz zum Vorgang ${activeVorgangId} an:\nTitel: "${g('nn-titel')}"\nInhalt: "${g('nn-inhalt')}"`,
-      history: [], smart: false
+    await req('POST', `/vorgaenge/${activeVorgangId}/eintraege`, {
+      typ: 'notiz', titel: g('nn-titel'), inhalt: g('nn-inhalt'),
     });
     closeM('m-notiz');
     toast('Notiz gespeichert ✓', 'ok');
