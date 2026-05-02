@@ -1,7 +1,7 @@
 # Conspectus
 
 **Persönlicher KI-Assistent für Schulleitung**  
-Ein selbst gehostetes System das Vorgänge, E-Mails, Kalender, Notizen und Delegationen bündelt – unterstützt durch Claude (Anthropic) als KI.
+Ein selbst gehostetes System das Vorgänge, E-Mails, Kalender, Todos und Notizen bündelt – unterstützt durch Claude (Anthropic) als KI.
 
 ---
 
@@ -16,6 +16,7 @@ Ein Vorgang bündelt:
 - Handgeschriebene Notizen (via Boox-Integration)
 - Delegationen (wer macht was bis wann)
 - Kalendertermine
+- Todos (mit Eisenhower-Matrix-Priorisierung)
 - Dokumente (via Nextcloud)
 
 ---
@@ -45,10 +46,10 @@ src/
   db.js           – MariaDB-Schema und Query-Helpers
   ai.js           – Claude-Integration, Systemkontext, Aktionen
   imap.js         – IMAP-Sync (mehrere Konten, Two-Pass)
-  caldav.js       – CalDAV-Sync (TZID-aware, Europe/Berlin)
+  caldav.js       – CalDAV-Sync + Schreiben (VEVENT PUT/DELETE)
   nextcloud.js    – WebDAV, Boox-Sync, URL-Encoding für Umlaute
   smtp.js         – E-Mail-Antworten senden
-  pushover.js     – Push-Benachrichtigungen
+  pushover.js     – Push-Benachrichtigungen (Token aus DB oder .env)
 frontend/
   index.html      – Komplettes Frontend (Single File)
 scripts/
@@ -64,7 +65,8 @@ scripts/
 ## Features
 
 **Dashboard**
-- Morgen-Briefing (KI-generiert, täglich per Pushover)
+- Morgen-Briefing (KI-generiert, täglich per Pushover, Markdown-Rendering mit Tabellen)
+- Eisenhower-Matrix mit offenen Todos (Q1: wichtig+dringend, Q2: planen, Q3: delegieren, Q4: eliminieren)
 - Kalender: Heute / Morgen / Diese Woche / 4-Wochen-Vorschau
 - E-Mail-Eingang mit Toggle Aktiv / Unzugeordnet / Erledigt
 - Offene Delegationen
@@ -72,8 +74,17 @@ scripts/
 **Vorgangsverwaltung**
 - Vollständige Chronologie pro Vorgang (E-Mails, Notizen, Delegationen)
 - Prioritäten (Hoch / Mittel / Niedrig), Deadlines, Typen
+- Status direkt im Detail-Header ändern (offen / in Bearbeitung / wartet / abgeschlossen)
+- Notizen direkt anlegen (kein Umweg über KI-Chat)
 - Nextcloud-Ordner wird automatisch angelegt
 - KI-Zusammenfassung und Nächste-Schritte auf Knopfdruck
+
+**Todos**
+- Todos pro Vorgang anlegen (Titel, Fälligkeitsdatum, wichtig/dringend)
+- Automatisch in CalDAV-Kalender schreiben (konfigurierbarer Ziel-Kalender in Einstellungen)
+- Eisenhower-Quadrant live-preview beim Erstellen
+- Todo als erledigt markieren (CalDAV-Eintrag wird gelöscht)
+- Dashboard zeigt alle offenen Todos in der Matrix
 
 **E-Mail-Verwaltung**
 - Eigener Tab mit der vollständigen E-Mail-Liste (bis zu 500 E-Mails)
@@ -94,6 +105,7 @@ scripts/
 **Kalender**
 - CalDAV-Discovery: alle Kalender aus Nextcloud mit einem Klick einbinden
 - Korrekte Zeitzone (TZID-Parsing für Europe/Berlin und W. Europe Standard Time)
+- CalDAV-Schreiben: Todos erzeugen VEVENT-Einträge im gewählten Kalender
 
 **Volltext-Suche**
 - Globale Suche über Vorgänge, E-Mails und Delegationen
@@ -104,12 +116,16 @@ scripts/
 - Überfällige Delegationen
 - Termin-Erinnerungen 30 Min. vorher
 - Nach jeder verarbeiteten Boox-Notiz
+- Token und User Key in Einstellungen konfigurierbar (werden in der DB gespeichert)
 
 **Darstellung**
 - Dark Mode (Toggle in der Topbar, persistent im localStorage)
+- Vollständiges Markdown-Rendering: Überschriften, Listen, Tabellen, Fettschrift, Code
 
 **Einstellungen**
 - E-Mail-Konten (IMAP), Kalender (CalDAV), Delegations-Personen
+- Todo-Zielkalender (welcher CalDAV-Kalender für neue Todos)
+- Pushover Token + User Key (in DB gespeichert, überschreibt .env)
 - System: Kosten, Sync-Intervall, Logs
 - Update-Mechanismus: GitHub Pull oder Datei-Upload direkt im Browser
 
@@ -141,7 +157,7 @@ NC_URL=https://nextcloud.example.com
 NC_USER=...
 NC_PASS=...
 
-# Pushover
+# Pushover (Fallback – bevorzugt in Einstellungen konfigurieren)
 PUSHOVER_TOKEN=...
 PUSHOVER_USER=...
 
@@ -164,6 +180,8 @@ GET  /search?q=                  – Volltext-Suche (Vorgänge, E-Mails, Delegat
 
 POST /vorgaenge                  – Vorgang anlegen
 GET  /vorgaenge/:id              – Vorgang mit Chronologie
+PATCH /vorgaenge/:id             – Vorgang-Felder aktualisieren (status, titel, ...)
+POST /vorgaenge/:id/eintraege    – Notiz direkt anlegen
 
 GET  /emails                     – E-Mails (Filter: limit, erledigt, vorgang_id)
 GET  /emails/themen              – Vorgänge mit E-Mail-Zählungen
@@ -173,6 +191,14 @@ POST /emails/:id/einordnen       – KI-Einordnung
 POST /emails/:id/erledigt        – Als erledigt markieren + IMAP-Archivierung
 POST /emails/:id/antworten       – E-Mail beantworten (SMTP)
 POST /emails/:id/ki-entwurf      – KI-Antwort-Entwurf
+
+GET  /todos                      – Todos (Filter: vorgang_id, erledigt)
+POST /todos                      – Todo anlegen (+ CalDAV-Eintrag)
+POST /todos/:id/erledigt         – Todo erledigen (+ CalDAV-Eintrag löschen)
+DELETE /todos/:id                – Todo löschen
+
+GET  /settings                   – Alle Einstellungen (key-value)
+PUT  /settings/:key              – Einstellung setzen
 
 GET  /events?days=28             – Kalendertermine
 POST /sync                       – E-Mail-Sync + KI-Analyse manuell
@@ -252,6 +278,8 @@ systemctl restart ki-assistent
 - **IMAP-Sync Two-Pass:** `ImapFlow` kann `client.download()` nicht innerhalb eines laufenden `client.fetch()`-Loops aufrufen (Verbindung belegt) → Pass 1 sammelt UIDs, Pass 2 lädt `{source:true}` einzeln nach.
 - **git safe.directory:** Läuft der Service als anderer User als der Repo-Eigentümer, schlägt `git pull` mit „dubious ownership" fehl. Fix: `git -c safe.directory=/opt/ki-assistent -C /opt/ki-assistent pull origin main`.
 - **Express-Routenreihenfolge:** `/emails/themen` muss vor `/emails/:id` registriert sein, sonst wird `themen` als `:id` interpretiert.
+- **Briefing speichern:** `morgenbriefing()` schreibt in `chat_messages`, nicht `vorgang_eintraege` – letztere Tabelle hat `vorgang_id NOT NULL`.
+- **Pushover-Credentials:** werden zuerst aus der `settings`-Tabelle gelesen, dann aus `.env` – so ist keine Neuinstallation nötig wenn Token wechseln.
 
 ---
 

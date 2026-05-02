@@ -6,7 +6,7 @@ import cron from 'node-cron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { initSchema, query, queryOne } from './db.js';
-import { syncAllAccounts, moveToErledigt } from './imap.js';
+import { syncAllAccounts, moveToErledigt, syncErledigtStatus } from './imap.js';
 import { chat, executeAction, getTokenStats, emailEinordnen, notizAnalysieren, morgenbriefing } from './ai.js';
 import { ncMkdir, neueRemarkableNotizen, remarkableVerarbeitet, ncDownload, vorgangOrdner } from './nextcloud.js';
 import { createCalDavEvent, deleteCalDavEvent } from './caldav.js';
@@ -475,6 +475,12 @@ if (!global._cronStarted) {
     console.log('[Briefing] Erstelle Morgen-Briefing...');
     try { await morgenbriefing(); console.log('[Briefing] OK'); }
     catch (e) { console.error('[Briefing] Fehler:', e.message); }
+  });
+
+  // INBOX-UID-Abgleich: außerhalb INBOX = erledigt (stündlich, Minute 45)
+  cron.schedule('45 * * * *', async () => {
+    try { await syncErledigtStatus(); }
+    catch (e) { console.error('[IMAP] syncErledigtStatus Fehler:', e.message); }
   });
 
   // Boox-Notizen (stündlich zur vollen Stunde)

@@ -76,18 +76,20 @@ async function syncAccount(account) {
       if (total === 0) return 0;
       const from = Math.max(1, total - MAX_EMAILS + 1);
 
-      // Pass 1: Envelopes – neue UIDs ermitteln
+      // Pass 1: Envelopes – neue UIDs ermitteln, \Answered-Flag prüfen
       const neueMsgs = [];
       for await (const msg of client.fetch(`${from}:${total}`, {
         uid: true, flags: true, envelope: true,
       })) {
         const exists = await queryOne(
-          'SELECT id FROM emails WHERE account_id = ? AND uid = ?',
+          'SELECT id, erledigt FROM emails WHERE account_id = ? AND uid = ?',
           [account.id, String(msg.uid)]
         );
-        if (!exists) neueMsgs.push({
-          uid: msg.uid, flags: msg.flags, envelope: msg.envelope,
-        });
+        if (!exists) {
+          neueMsgs.push({ uid: msg.uid, flags: msg.flags, envelope: msg.envelope });
+        } else if (!exists.erledigt && msg.flags.has('\\Answered')) {
+          await query('UPDATE emails SET erledigt = 1 WHERE id = ?', [exists.id]);
+        }
       }
 
       // Pass 2: Body + Anhänge nur für neue E-Mails laden
@@ -174,6 +176,60 @@ export async function moveToErledigt(account, uid) {
     }
   } finally {
     try { await client.logout(); } catch(e) {}
+  }
+}
+
+export async function syncErledigtStatus() {
+  const accounts = await query('SELECT * FROM email_accounts WHERE active = 1');
+  let total = 0;
+  for (const acc of accounts) {
+    try {
+      const count = await syncErledigtStatusForAccount(acc);
+      if (count > 0) console.log(`[IMAP] ${acc.email}: ${count} E-Mail(s) als erledigt markiert (nicht mehr in INBOX)`);
+      total += count;
+    } catch (e) {
+      console.error(`[IMAP] syncErledigtStatus Fehler (${acc.email}):`, e.message);
+    }
+  }
+  return total;
+}
+
+async function syncErledigtStatusForAccount(account) {
+  const client = new ImapFlow({
+    host: account.host,
+    port: account.port,
+    secure: !!account.tls,
+    auth: { user: account.username, pass: account.password },
+    logger: false,
+    socketTimeout: 20000,
+    connectionTimeout: 15000,
+    disableAutoIdle: true,
+  });
+  client.on('error', () => {});
+  await client.connect();
+  try {
+    const lock = await client.getMailboxLock('INBOX');
+    try {
+      const inboxUids = new Set(await client.search({ all: true }, { uid: true }));
+      const dbEmails = await query(
+        'SELECT id, uid FROM emails WHERE account_id = ? AND erledigt = 0',
+        [account.id]
+      );
+      // Sicherheitscheck: leere INBOX bei vorhandenen DB-Einträgen ignorieren
+      if (inboxUids.size === 0 && dbEmails.length > 0) return 0;
+      let count = 0;
+      for (const email of dbEmails) {
+        if (!inboxUids.has(parseInt(email.uid))) {
+          await query('UPDATE emails SET erledigt = 1 WHERE id = ?', [email.id]);
+          count++;
+        }
+      }
+      return count;
+    } finally {
+      lock.release();
+    }
+  } finally {
+    try { await client.logout(); } catch (e) {}
   }
 }
 
