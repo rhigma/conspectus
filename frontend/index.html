@@ -196,6 +196,11 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
 .vtag.planung{background:var(--goldl);color:var(--gold)}
 .vtag.sonstiges{background:var(--paper3);color:var(--ink3)}
 .vtag.status{background:var(--paper2);color:var(--ink2)}
+.status-select{font-size:9px;padding:2px 6px;border-radius:20px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.06em;background:var(--paper2);color:var(--ink2);border:1px solid var(--border);cursor:pointer;outline:none}
+.status-select:hover{border-color:var(--accent2)}
+.status-select.abgeschlossen{background:var(--greenl);color:var(--green);border-color:transparent}
+.status-select.in_bearbeitung{background:var(--bluel);color:var(--blue);border-color:transparent}
+.status-select.wartet{background:var(--goldl);color:var(--gold);border-color:transparent}
 .vorgang-deadline{font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace}
 .vorgang-deadline.ueberfaellig{color:var(--accent);font-weight:500}
 .vorgang-aside{text-align:right;flex-shrink:0}
@@ -1543,7 +1548,12 @@ async function openVorgang(id) {
     document.getElementById('detail-titel').textContent = v.titel;
     document.getElementById('detail-tags').innerHTML = [
       `<span class="vtag ${v.typ}">${v.typ}</span>`,
-      `<span class="vtag status">${v.status.replace('_',' ')}</span>`,
+      `<select class="status-select ${v.status}" onchange="setVorgangStatus(${v.id},this)">
+        <option value="offen"${v.status==='offen'?' selected':''}>offen</option>
+        <option value="in_bearbeitung"${v.status==='in_bearbeitung'?' selected':''}>in bearbeitung</option>
+        <option value="wartet"${v.status==='wartet'?' selected':''}>wartet</option>
+        <option value="abgeschlossen"${v.status==='abgeschlossen'?' selected':''}>abgeschlossen</option>
+      </select>`,
       v.deadline ? `<span class="vtag" style="background:var(--goldl);color:var(--gold)">${new Date(v.deadline).toLocaleDateString('de-DE')}</span>` : '',
     ].join('');
     renderDetail(v, todos);
@@ -1696,6 +1706,15 @@ function toggleExpand(id, btn) {
   const el = document.getElementById(id);
   el.classList.toggle('expanded');
   btn.textContent = el.classList.contains('expanded') ? 'Weniger ↑' : 'Mehr anzeigen ↓';
+}
+
+async function setVorgangStatus(id, sel) {
+  const status = sel.value;
+  try {
+    await req('PATCH', `/vorgaenge/${id}`, { status });
+    sel.className = 'status-select ' + status;
+    loadStats();
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
 }
 
 function chatUeberVorgang(id, titel) {

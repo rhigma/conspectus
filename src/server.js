@@ -92,6 +92,20 @@ app.put('/vorgaenge/:id', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+app.patch('/vorgaenge/:id', async (req, res) => {
+  try {
+    const allowed = ['titel', 'typ', 'status', 'prioritaet', 'deadline', 'beschreibung'];
+    const updates = [], params = [];
+    for (const key of allowed) {
+      if (key in req.body) { updates.push(`${key} = ?`); params.push(req.body[key] ?? null); }
+    }
+    if (!updates.length) return res.json({ ok: true });
+    params.push(req.params.id);
+    await query(`UPDATE vorgaenge SET ${updates.join(', ')} WHERE id = ?`, params);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── DELEGATIONEN ──────────────────────────────────────────────────────────────
 app.get('/delegationen', async (req, res) => {
   try {
