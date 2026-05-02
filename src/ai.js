@@ -318,11 +318,10 @@ Sei prägnant. Keine langen Erklärungen.`,
 
   const text = response.content[0].text;
 
-  // Als Notiz speichern
-  const vorgangCtx = null;
   await query(
-    'INSERT INTO vorgang_eintraege (vorgang_id, typ, titel, inhalt) VALUES (?,?,?,?)',
-    [null, 'ki_analyse', `Briefing ${heute}`, text]
+    'INSERT INTO chat_messages (role, content, model, tokens_in, tokens_out) VALUES (?,?,?,?,?)',
+    ['assistant', text, MODEL_FAST,
+     response.usage?.input_tokens || 0, response.usage?.output_tokens || 0]
   );
 
   return text;
