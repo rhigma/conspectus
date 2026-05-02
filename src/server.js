@@ -54,10 +54,8 @@ app.get('/vorgaenge', async (req, res) => {
 app.post('/vorgaenge', async (req, res) => {
   try {
     const { titel, typ, prioritaet, deadline, beschreibung } = req.body;
-    const { ncMkdir: mk, vorgangOrdner } = await import('./nextcloud.js');
-    const { vorgangOrdner: vo } = await import('./nextcloud.js');
-    const ncPfad = await vo(titel);
-    const [result] = await query(
+    const ncPfad = await vorgangOrdner(titel);
+    const result = await query(
       'INSERT INTO vorgaenge (titel, typ, prioritaet, deadline, beschreibung, nc_ordner) VALUES (?,?,?,?,?,?)',
       [titel, typ || 'sonstiges', prioritaet || 2, deadline || null, beschreibung || null, ncPfad]
     );
