@@ -192,6 +192,32 @@ export async function initSchema() {
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
   `);
 
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS settings (
+      \`key\` VARCHAR(100) PRIMARY KEY,
+      value TEXT
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+  `);
+
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS todos (
+      id          INT AUTO_INCREMENT PRIMARY KEY,
+      vorgang_id  INT NOT NULL,
+      titel       VARCHAR(500) NOT NULL,
+      beschreibung TEXT,
+      faellig_am  DATETIME,
+      wichtig     TINYINT NOT NULL DEFAULT 1,
+      dringend    TINYINT NOT NULL DEFAULT 0,
+      erledigt    TINYINT NOT NULL DEFAULT 0,
+      erledigt_am DATETIME,
+      event_uid   VARCHAR(255),
+      calendar_id INT,
+      created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (vorgang_id) REFERENCES vorgaenge(id) ON DELETE CASCADE,
+      FOREIGN KEY (calendar_id) REFERENCES calendars(id) ON DELETE SET NULL
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+  `);
+
   // Stammdaten eintragen wenn noch nicht vorhanden
   const personen = await query('SELECT COUNT(*) as n FROM delegations_personen');
   if (personen[0].n === 0) {

@@ -9,6 +9,8 @@ import { initSchema, query, queryOne } from './db.js';
 import { syncAllAccounts, moveToErledigt } from './imap.js';
 import { chat, executeAction, getTokenStats, emailEinordnen, notizAnalysieren, morgenbriefing } from './ai.js';
 import { ncMkdir, neueRemarkableNotizen, remarkableVerarbeitet, ncDownload, vorgangOrdner } from './nextcloud.js';
+import { createCalDavEvent, deleteCalDavEvent } from './caldav.js';
+import { randomUUID } from 'crypto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app    = express();
@@ -684,6 +686,86 @@ app.get('/events', async (req, res) => {
     `, [from, until.toISOString()]);
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── SETTINGS ──────────────────────────────────────────────────────────────────
+app.get('/settings', async (req, res) => {
+  try {
+    const rows = await query('SELECT * FROM settings');
+    const s = {};
+    for (const r of rows) s[r.key] = r.value;
+    res.json(s);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/settings/:key', async (req, res) => {
+  try {
+    await query(
+      'INSERT INTO settings (`key`, value) VALUES (?,?) ON DUPLICATE KEY UPDATE value = VALUES(value)',
+      [req.params.key, req.body.value ?? null]
+    );
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── TODOS ─────────────────────────────────────────────────────────────────────
+app.get('/todos', async (req, res) => {
+  try {
+    const rows = await query(
+      'SELECT * FROM todos WHERE vorgang_id = ? ORDER BY erledigt ASC, faellig_am ASC, created_at ASC',
+      [req.query.vorgang_id]
+    );
+    res.json(rows);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/todos', async (req, res) => {
+  try {
+    const { vorgang_id, titel, beschreibung, faellig_am, wichtig, dringend } = req.body;
+    const setting = await queryOne("SELECT value FROM settings WHERE `key` = 'todo_calendar_id'");
+    const calId = setting?.value ? parseInt(setting.value) : null;
+
+    let eventUid = null;
+    let eventCalId = null;
+    if (calId && faellig_am) {
+      const quadrant = wichtig && dringend ? 'Sofort erledigen'
+        : wichtig ? 'Terminieren'
+        : dringend ? 'Delegieren' : 'Eliminieren';
+      eventUid = randomUUID();
+      await createCalDavEvent(calId, {
+        uid: eventUid,
+        title: `☑ ${titel}`,
+        start: faellig_am,
+        description: beschreibung ? `${beschreibung}\n[${quadrant}]` : `[${quadrant}]`,
+      });
+      eventCalId = calId;
+    }
+
+    const result = await query(
+      'INSERT INTO todos (vorgang_id, titel, beschreibung, faellig_am, wichtig, dringend, event_uid, calendar_id) VALUES (?,?,?,?,?,?,?,?)',
+      [vorgang_id, titel, beschreibung || null, faellig_am || null, wichtig ? 1 : 0, dringend ? 1 : 0, eventUid, eventCalId]
+    );
+    res.json({ id: result.insertId });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/todos/:id/erledigt', async (req, res) => {
+  try {
+    await query('UPDATE todos SET erledigt = 1, erledigt_am = NOW() WHERE id = ?', [req.params.id]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/todos/:id', async (req, res) => {
+  try {
+    const todo = await queryOne('SELECT * FROM todos WHERE id = ?', [req.params.id]);
+    if (!todo) return res.status(404).json({ error: 'Nicht gefunden' });
+    if (todo.event_uid && todo.calendar_id) {
+      await deleteCalDavEvent(todo.calendar_id, todo.event_uid).catch(() => {});
+    }
+    await query('DELETE FROM todos WHERE id = ?', [req.params.id]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── SYSTEM-CONFIG ─────────────────────────────────────────────────────────────

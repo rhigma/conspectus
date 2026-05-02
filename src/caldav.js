@@ -194,6 +194,66 @@ export async function getCalendarContext(days = 7) {
   return lines.join('\n');
 }
 
+export async function createCalDavEvent(calendarId, { uid, title, start, end, description }) {
+  const cal = await queryOne('SELECT * FROM calendars WHERE id = ?', [calendarId]);
+  if (!cal) throw new Error('Kalender nicht gefunden');
+  const auth = 'Basic ' + Buffer.from(`${cal.username}:${cal.password}`).toString('base64');
+  const { default: fetch } = await import('node-fetch');
+
+  const startDate = new Date(start);
+  const endDate = end ? new Date(end) : new Date(startDate.getTime() + 3600000);
+
+  const ics = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Conspectus//DE',
+    'BEGIN:VEVENT',
+    `UID:${uid}`,
+    `DTSTAMP:${formatIcal(new Date())}`,
+    `DTSTART;TZID=Europe/Berlin:${formatIcalLocal(startDate)}`,
+    `DTEND;TZID=Europe/Berlin:${formatIcalLocal(endDate)}`,
+    `SUMMARY:${escapeIcal(title)}`,
+    description ? `DESCRIPTION:${escapeIcal(description)}` : null,
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].filter(Boolean).join('\r\n');
+
+  const base = cal.url.endsWith('/') ? cal.url : cal.url + '/';
+  const res = await fetch(base + uid + '.ics', {
+    method: 'PUT',
+    headers: { Authorization: auth, 'Content-Type': 'text/calendar; charset=utf-8' },
+    body: ics,
+  });
+  if (!res.ok && res.status !== 201 && res.status !== 204) {
+    throw new Error(`CalDAV PUT fehlgeschlagen: HTTP ${res.status}`);
+  }
+}
+
+export async function deleteCalDavEvent(calendarId, uid) {
+  const cal = await queryOne('SELECT * FROM calendars WHERE id = ?', [calendarId]);
+  if (!cal) return;
+  const auth = 'Basic ' + Buffer.from(`${cal.username}:${cal.password}`).toString('base64');
+  const { default: fetch } = await import('node-fetch');
+  const base = cal.url.endsWith('/') ? cal.url : cal.url + '/';
+  const res = await fetch(base + uid + '.ics', {
+    method: 'DELETE',
+    headers: { Authorization: auth },
+  });
+  if (!res.ok && res.status !== 404 && res.status !== 204) {
+    throw new Error(`CalDAV DELETE fehlgeschlagen: HTTP ${res.status}`);
+  }
+}
+
+function formatIcalLocal(date) {
+  const pad = n => String(n).padStart(2, '0');
+  const d = new Date(date.toLocaleString('en-US', { timeZone: 'Europe/Berlin' }));
+  return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
+}
+
+function escapeIcal(str) {
+  return (str || '').replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/;/g, '\\;').replace(/,/g, '\\,');
+}
+
 export async function testCalDav(url, username, password) {
   const auth = 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64');
   const { default: fetch } = await import('node-fetch');

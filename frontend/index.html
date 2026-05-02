@@ -233,6 +233,31 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
 /* DETAIL SIDEBAR */
 .detail-sidebar{display:flex;flex-direction:column;gap:12px}
 
+/* ── TODOS & EISENHOWER ── */
+.eisenhower{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin-bottom:8px}
+.ei-q{padding:8px;background:var(--paper);min-height:48px}
+[data-theme="dark"] .ei-q{background:var(--paper2)}
+.ei-q-label{font-size:9px;font-family:'IBM Plex Mono',monospace;letter-spacing:.06em;text-transform:uppercase;font-weight:500;margin-bottom:5px}
+.ei-q.q1 .ei-q-label{color:var(--accent)}
+.ei-q.q2 .ei-q-label{color:var(--blue)}
+.ei-q.q3 .ei-q-label{color:var(--gold)}
+.ei-q.q4 .ei-q-label{color:var(--ink3)}
+.todo-item{display:flex;align-items:flex-start;gap:5px;padding:3px 0;border-top:1px solid var(--paper2)}
+.todo-item.erledigt .todo-name{text-decoration:line-through;opacity:.5}
+.todo-check{background:none;border:1px solid var(--border2);border-radius:2px;width:14px;height:14px;min-width:14px;cursor:pointer;font-size:9px;padding:0;color:var(--ink)}
+.todo-check:hover{border-color:var(--accent2)}
+.todo-check.done{background:var(--green);border-color:var(--green);color:#fff}
+.todo-name{flex:1;font-size:11px;color:var(--ink2);line-height:1.35;word-break:break-word}
+.todo-meta{font-size:9px;color:var(--ink3);font-family:'IBM Plex Mono',monospace;margin-top:1px}
+.todo-del{background:none;border:none;cursor:pointer;color:var(--ink3);font-size:13px;opacity:0;padding:0 1px;line-height:1;flex-shrink:0}
+.todo-item:hover .todo-del{opacity:.6}
+.ei-empty{font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace;opacity:.5}
+.quadrant-badge{display:inline-block;padding:3px 10px;border-radius:10px;font-size:10px;font-family:'IBM Plex Mono',monospace;margin-top:8px}
+.quadrant-badge.q1{background:var(--accentl);color:var(--accent)}
+.quadrant-badge.q2{background:var(--bluel);color:var(--blue)}
+.quadrant-badge.q3{background:var(--goldl);color:var(--gold)}
+.quadrant-badge.q4{background:var(--paper3);color:var(--ink3)}
+
 /* ── E-MAIL VERWALTUNG ── */
 #v-emails{overflow:hidden}
 .emails-toolbar{padding:14px 20px;border-bottom:1px solid var(--border);background:var(--paper);display:flex;flex-direction:column;gap:10px}
@@ -532,7 +557,8 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
           <div class="detail-titel" id="detail-titel">–</div>
           <div style="display:flex;gap:8px;margin-top:6px" id="detail-tags"></div>
         </div>
-        <button class="new-vorgang-btn" style="margin-left:auto;flex-shrink:0" onclick="openNewDelegation()">+ Delegation</button>
+        <button class="new-vorgang-btn" style="margin-left:auto;flex-shrink:0" onclick="openNewTodo()">+ Todo</button>
+        <button class="new-vorgang-btn" style="flex-shrink:0" onclick="openNewDelegation()">+ Delegation</button>
         <button class="new-vorgang-btn" style="background:var(--blue);flex-shrink:0" onclick="openNewNotiz()">+ Notiz</button>
       </div>
       <div class="detail-body" id="detail-body">
@@ -656,6 +682,17 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
             <button onclick="openModal('m-person')" style="font-size:10px;font-family:'IBM Plex Mono',monospace;background:var(--accent);color:#fff;border:none;border-radius:var(--r);padding:3px 10px;cursor:pointer">+ Hinzufügen</button>
           </div>
           <div id="s-person-list"><div class="loading-row"><div class="spin"></div>Lade…</div></div>
+        </div>
+
+        <!-- TODO-KALENDER -->
+        <div class="card">
+          <div class="card-header"><span class="card-title">☑ Todo-Kalender</span></div>
+          <div style="font-size:11px;color:var(--ink2);line-height:1.65;margin-bottom:10px">
+            Neue Aufgaben werden als Termin in diesem Kalender eingetragen.
+          </div>
+          <select id="s-todo-cal" onchange="saveTodoKalender(this.value)" style="width:100%;padding:7px 8px;border:1px solid var(--border);border-radius:var(--r);font-family:'IBM Plex Sans',sans-serif;font-size:12px;background:var(--paper);color:var(--ink)">
+            <option value="">– kein Kalender –</option>
+          </select>
         </div>
 
         <!-- SYSTEM -->
@@ -923,6 +960,31 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
     <div class="modal-btns">
       <button class="btn-c" onclick="closeM('m-notiz')">Abbrechen</button>
       <button class="btn-s" onclick="saveNotiz()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: NEUES TODO -->
+<div class="modal-bg" id="m-todo" style="display:none" onclick="bgClose(event,'m-todo')">
+  <div class="modal">
+    <h2>Neue Aufgabe</h2>
+    <div class="mf"><label>Titel</label><input id="nt-titel" placeholder="Aufgabe beschreiben…"/></div>
+    <div class="mf"><label>Fällig am</label><input type="datetime-local" id="nt-faellig"/></div>
+    <div class="mf"><label>Notiz (optional)</label><textarea id="nt-beschreibung" placeholder="Details…" style="min-height:60px"></textarea></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:4px">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;padding:8px;border:1px solid var(--border);border-radius:var(--r)">
+        <input type="checkbox" id="nt-wichtig" onchange="updateQuadrant()" checked style="width:14px;height:14px;accent-color:var(--accent)"/>
+        <span>Wichtig</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;padding:8px;border:1px solid var(--border);border-radius:var(--r)">
+        <input type="checkbox" id="nt-dringend" onchange="updateQuadrant()" style="width:14px;height:14px;accent-color:var(--accent)"/>
+        <span>Dringend</span>
+      </label>
+    </div>
+    <div id="nt-quadrant-preview"></div>
+    <div class="modal-btns">
+      <button class="btn-c" onclick="closeM('m-todo')">Abbrechen</button>
+      <button class="btn-s" onclick="saveTodo()">Aufgabe anlegen</button>
     </div>
   </div>
 </div>
@@ -1418,18 +1480,53 @@ async function openVorgang(id) {
   document.getElementById('detail-titel').textContent = '…';
   document.getElementById('detail-body').innerHTML = '<div class="loading-row"><div class="spin"></div>Lade…</div>';
   try {
-    const v = await req('GET', `/vorgaenge/${id}`);
+    const [v, todos] = await Promise.all([
+      req('GET', `/vorgaenge/${id}`),
+      req('GET', `/todos?vorgang_id=${id}`),
+    ]);
     document.getElementById('detail-titel').textContent = v.titel;
     document.getElementById('detail-tags').innerHTML = [
       `<span class="vtag ${v.typ}">${v.typ}</span>`,
       `<span class="vtag status">${v.status.replace('_',' ')}</span>`,
       v.deadline ? `<span class="vtag" style="background:var(--goldl);color:var(--gold)">${new Date(v.deadline).toLocaleDateString('de-DE')}</span>` : '',
     ].join('');
-    renderDetail(v);
+    renderDetail(v, todos);
   } catch(e) { document.getElementById('detail-body').innerHTML = '<div class="empty">Fehler: ' + esc(e.message) + '</div>'; }
 }
 
-function renderDetail(v) {
+function renderTodosCard(todos) {
+  const groups = { q1: [], q2: [], q3: [], q4: [] };
+  for (const t of todos) {
+    if (t.wichtig && t.dringend) groups.q1.push(t);
+    else if (t.wichtig)           groups.q2.push(t);
+    else if (t.dringend)          groups.q3.push(t);
+    else                          groups.q4.push(t);
+  }
+  const renderQ = ts => ts.map(t => `
+    <div class="todo-item${t.erledigt?' erledigt':''}" id="todo-${t.id}">
+      <button class="todo-check${t.erledigt?' done':''}" onclick="todoErledigt(${t.id})" title="Erledigt markieren">${t.erledigt?'✓':''}</button>
+      <div style="flex:1;min-width:0">
+        <div class="todo-name">${esc(t.titel)}</div>
+        ${t.faellig_am?`<div class="todo-meta">${fmtDateTime(t.faellig_am)}</div>`:''}
+      </div>
+      <button class="todo-del" onclick="todoLoeschen(${t.id})" title="Löschen">×</button>
+    </div>`).join('');
+  const empty = '<div class="ei-empty">–</div>';
+  return `<div class="card" style="padding:14px">
+    <div class="card-header" style="margin-bottom:10px">
+      <span class="card-title">☑ Aufgaben</span>
+      <span class="card-count">${todos.filter(t=>!t.erledigt).length} offen</span>
+    </div>
+    <div class="eisenhower">
+      <div class="ei-q q1"><div class="ei-q-label">Sofort</div>${renderQ(groups.q1)||empty}</div>
+      <div class="ei-q q2"><div class="ei-q-label">Planen</div>${renderQ(groups.q2)||empty}</div>
+      <div class="ei-q q3"><div class="ei-q-label">Delegieren</div>${renderQ(groups.q3)||empty}</div>
+      <div class="ei-q q4"><div class="ei-q-label">Eliminieren</div>${renderQ(groups.q4)||empty}</div>
+    </div>
+  </div>`;
+}
+
+function renderDetail(v, todos = []) {
   // Chronologie zusammenbauen
   const all = [
     ...v.emails.map(e => ({ typ:'email', titel:e.subject||'(kein Betreff)', inhalt:`Von: ${e.from_name||e.from_email}\n\n${e.body_text||''}`, time:e.date, ref:e })),
@@ -1467,6 +1564,7 @@ function renderDetail(v) {
       <div class="chronologie">${chronHtml}</div>
     </div>
     <div class="detail-sidebar">
+      ${renderTodosCard(todos)}
       <div class="card" style="padding:14px">
         <div class="card-header"><span class="card-title">Delegationen</span></div>
         ${delegHtml}
@@ -1477,6 +1575,65 @@ function renderDetail(v) {
       </div>` : ''}
       <button class="new-vorgang-btn" style="background:var(--ink);width:100%" onclick="chatUeberVorgang(${v.id},'${esc(v.titel)}')">◈ KI fragen zu diesem Vorgang</button>
     </div>`;
+}
+
+// ── TODO-AKTIONEN ─────────────────────────────────────────────────────────────
+function openNewTodo() {
+  if (!activeVorgangId) { toast('Kein Vorgang aktiv', 'err'); return; }
+  document.getElementById('nt-titel').value = '';
+  document.getElementById('nt-beschreibung').value = '';
+  document.getElementById('nt-faellig').value = '';
+  document.getElementById('nt-wichtig').checked = true;
+  document.getElementById('nt-dringend').checked = false;
+  updateQuadrant();
+  document.getElementById('m-todo').style.display = 'flex';
+  setTimeout(() => document.getElementById('nt-titel').focus(), 50);
+}
+
+function updateQuadrant() {
+  const w = document.getElementById('nt-wichtig').checked;
+  const d = document.getElementById('nt-dringend').checked;
+  const cls = w && d ? 'q1' : w ? 'q2' : d ? 'q3' : 'q4';
+  const label = w && d ? 'Sofort erledigen' : w ? 'Planen' : d ? 'Delegieren' : 'Eliminieren';
+  document.getElementById('nt-quadrant-preview').innerHTML =
+    `<span class="quadrant-badge ${cls}">${label}</span>`;
+}
+
+async function saveTodo() {
+  const titel = document.getElementById('nt-titel').value.trim();
+  if (!titel) { toast('Bitte Titel eingeben', 'err'); return; }
+  const wichtig  = document.getElementById('nt-wichtig').checked;
+  const dringend = document.getElementById('nt-dringend').checked;
+  const faellig  = document.getElementById('nt-faellig').value;
+  const beschreibung = document.getElementById('nt-beschreibung').value.trim();
+  try {
+    await req('POST', '/todos', {
+      vorgang_id: activeVorgangId, titel, beschreibung: beschreibung || null,
+      faellig_am: faellig || null, wichtig, dringend,
+    });
+    closeM('m-todo');
+    toast('Aufgabe angelegt ✓', 'ok');
+    openVorgang(activeVorgangId);
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+}
+
+async function todoErledigt(id) {
+  try {
+    await req('POST', `/todos/${id}/erledigt`);
+    const item = document.getElementById(`todo-${id}`);
+    if (item) {
+      item.classList.add('erledigt');
+      const btn = item.querySelector('.todo-check');
+      if (btn) { btn.classList.add('done'); btn.textContent = '✓'; }
+    }
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+}
+
+async function todoLoeschen(id) {
+  try {
+    await req('DELETE', `/todos/${id}`);
+    document.getElementById(`todo-${id}`)?.remove();
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
 }
 
 function toggleExpand(id, btn) {
@@ -1651,7 +1808,27 @@ async function loadEinstellungen() {
     loadSettingsCals(),
     loadSettingsPersonen(),
     loadSystemInfo(),
+    loadTodoKalenderSetting(),
   ]);
+}
+
+async function loadTodoKalenderSetting() {
+  const sel = document.getElementById('s-todo-cal');
+  try {
+    const [cals, settings] = await Promise.all([
+      req('GET', '/accounts/calendar'),
+      req('GET', '/settings'),
+    ]);
+    sel.innerHTML = '<option value="">– kein Kalender –</option>' +
+      cals.map(c => `<option value="${c.id}"${settings.todo_calendar_id == c.id?' selected':''}>${esc(c.label)}</option>`).join('');
+  } catch(e) { sel.innerHTML = '<option value="">Fehler beim Laden</option>'; }
+}
+
+async function saveTodoKalender(val) {
+  try {
+    await req('PUT', '/settings/todo_calendar_id', { value: val || null });
+    toast('Kalender gespeichert ✓', 'ok');
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
 }
 
 async function loadSettingsEmails() {
