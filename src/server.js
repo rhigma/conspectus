@@ -711,9 +711,17 @@ app.put('/settings/:key', async (req, res) => {
 // ── TODOS ─────────────────────────────────────────────────────────────────────
 app.get('/todos', async (req, res) => {
   try {
+    const where = [];
+    const params = [];
+    if (req.query.vorgang_id) { where.push('t.vorgang_id = ?'); params.push(req.query.vorgang_id); }
+    if (req.query.erledigt !== undefined) { where.push('t.erledigt = ?'); params.push(parseInt(req.query.erledigt)); }
+    const clause = where.length ? 'WHERE ' + where.join(' AND ') : '';
     const rows = await query(
-      'SELECT * FROM todos WHERE vorgang_id = ? ORDER BY erledigt ASC, faellig_am ASC, created_at ASC',
-      [req.query.vorgang_id]
+      `SELECT t.*, v.titel as vorgang_titel FROM todos t
+       JOIN vorgaenge v ON v.id = t.vorgang_id
+       ${clause}
+       ORDER BY t.erledigt ASC, t.faellig_am ASC, t.created_at ASC`,
+      params
     );
     res.json(rows);
   } catch(e) { res.status(500).json({ error: e.message }); }
