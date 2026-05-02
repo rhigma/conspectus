@@ -232,7 +232,7 @@ app.post('/emails/:id/einordnen', async (req, res) => {
 app.post('/chat', upload.array('images', 5), async (req, res) => {
   try {
     const text    = req.body.text || '';
-    const history = JSON.parse(req.body.history || '[]');
+    const history = Array.isArray(req.body.history) ? req.body.history : JSON.parse(req.body.history || '[]');
     const smart   = req.body.smart === 'true' || req.body.smart === true;
     const images  = (req.files || []).map(f => ({
       base64: f.buffer.toString('base64'),
