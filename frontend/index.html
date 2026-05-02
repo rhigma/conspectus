@@ -1597,6 +1597,13 @@ function renderVorgaenge(list) {
 }
 
 // ── VORGANG DETAIL ─────────────────────────────────────────────────────────────
+let _chronDesc = true;
+
+function toggleChronOrder() {
+  _chronDesc = !_chronDesc;
+  openVorgang(activeVorgangId);
+}
+
 async function openVorgang(id) {
   activeVorgangId = id;
   showView('detail');
@@ -1659,7 +1666,7 @@ function renderDetail(v, todos = []) {
   const all = [
     ...v.emails.map(e => ({ typ:'email', titel:e.subject||'(kein Betreff)', inhalt:`Von: ${e.from_name||e.from_email}\n\n${e.body_text||''}`, time:e.date, ref:e })),
     ...v.eintraege.map(e => ({ typ:e.typ, titel:e.titel||e.typ, inhalt:e.inhalt||'', time:e.created_at })),
-  ].sort((a,b) => new Date(a.time) - new Date(b.time));
+  ].sort((a,b) => _chronDesc ? new Date(b.time) - new Date(a.time) : new Date(a.time) - new Date(b.time));
 
   const icons = { email:'✉', notiz:'✎', datei:'◻', delegation:'→', termin:'◷', ki_analyse:'◈' };
 
@@ -1688,7 +1695,7 @@ function renderDetail(v, todos = []) {
 
   document.getElementById('detail-body').innerHTML = `
     <div>
-      <div class="card-header" style="margin-bottom:12px"><span class="card-title">Chronologie</span><span class="card-count">${all.length} Einträge</span></div>
+      <div class="card-header" style="margin-bottom:12px"><span class="card-title">Chronologie</span><span class="card-count">${all.length} Einträge</span><button class="tag-btn" style="font-size:10px;padding:2px 7px" onclick="toggleChronOrder()">${_chronDesc ? '↑ Neu oben' : '↓ Alt oben'}</button></div>
       <div class="chronologie">${chronHtml}</div>
     </div>
     <div class="detail-sidebar">
