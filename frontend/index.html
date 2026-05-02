@@ -426,6 +426,35 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
 .ki-analyse-text strong{color:var(--ink)}
 .vorgang-select{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:11px;background:var(--paper);color:var(--ink);outline:none;margin-bottom:6px}
 .vorgang-select:focus{border-color:var(--accent)}
+
+/* ── MOBILE ── */
+.menu-toggle{display:none;background:none;border:1px solid #444;border-radius:var(--r);color:#ccc;font-size:17px;cursor:pointer;padding:3px 10px;line-height:1.4;flex-shrink:0}
+.sidebar-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:90}
+.sidebar-backdrop.visible{display:block}
+
+@media(max-width:768px){
+  .menu-toggle{display:inline-block}
+  #app{grid-template-columns:1fr !important}
+  .sidebar{
+    position:fixed;top:52px;left:0;bottom:0;
+    width:270px;z-index:100;
+    transform:translateX(-100%);
+    transition:transform .25s ease;
+    box-shadow:var(--shadow2)
+  }
+  .sidebar.open{transform:translateX(0)}
+  .topbar{padding:0 10px;gap:6px}
+  .top-search,.top-status,.topbtn-secondary{display:none !important}
+  .detail-body{grid-template-columns:1fr !important}
+  .email-view-body{grid-template-columns:1fr !important}
+  .email-sidebar{display:none !important}
+  #dash-grid-row{grid-template-columns:1fr !important}
+  .modal{width:calc(100vw - 24px) !important;max-height:92vh}
+  .vorgaenge-toolbar{flex-wrap:wrap}
+  .detail-header{flex-wrap:wrap;gap:8px}
+  .detail-header .new-vorgang-btn{font-size:10px;padding:5px 8px}
+  #v-dash{padding:14px !important}
+}
 </style>
 </head>
 <body>
@@ -444,6 +473,7 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
 <!-- APP -->
 <div id="app">
   <div class="topbar">
+    <button id="menu-toggle" class="menu-toggle" onclick="toggleSidebar()" title="Menü">☰</button>
     <div class="wordmark">Conspectus</div>
     <div class="top-search">
       <input id="top-search-input" class="top-search-input" placeholder="Suchen…" oninput="topSearchDebounced()" autocomplete="off" />
@@ -453,8 +483,8 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
       <div class="sdot" id="sdot"></div>
       <span id="stxt">verbunden</span>
     </div>
-    <button class="top-btn" onclick="doSync()">↺ Sync</button>
-    <button class="top-btn" onclick="doBriefing()">☀ Briefing</button>
+    <button class="top-btn topbtn-secondary" onclick="doSync()">↺ Sync</button>
+    <button class="top-btn topbtn-secondary" onclick="doBriefing()">☀ Briefing</button>
     <button class="top-btn" id="dark-toggle" onclick="toggleDarkMode()" title="Dark/Light Mode">◐</button>
     <button class="top-btn" onclick="doLogout()">Abmelden</button>
   </div>
@@ -481,6 +511,7 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
       <button class="sync-btn" onclick="doSync()">↺ Jetzt synchronisieren</button>
     </div>
   </div>
+  <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="closeSidebar()"></div>
 
   <div class="main">
 
@@ -507,7 +538,7 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
       </div>
 
       <!-- Eingang + Todos nebeneinander -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <div id="dash-grid-row" style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
         <div class="card">
           <div class="card-header">
             <span class="card-title">✉ Eingang</span>
@@ -1062,6 +1093,17 @@ async function doLogin() {
 }
 function doLogout() { sessionStorage.clear(); location.reload(); }
 
+function toggleSidebar() {
+  const s = document.querySelector('.sidebar');
+  const b = document.getElementById('sidebar-backdrop');
+  const open = s.classList.toggle('open');
+  b.classList.toggle('visible', open);
+}
+function closeSidebar() {
+  document.querySelector('.sidebar').classList.remove('open');
+  document.getElementById('sidebar-backdrop').classList.remove('visible');
+}
+
 // Auto-login
 if (SECRET) {
   req('GET', '/stats').then(() => {
@@ -1085,6 +1127,7 @@ function boot() {
 
 // ── VIEWS ──────────────────────────────────────────────────────────────────────
 function showView(v) {
+  closeSidebar();
   document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
   document.getElementById('v-' + v).classList.add('active');
