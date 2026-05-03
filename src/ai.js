@@ -106,6 +106,12 @@ Notiz zu Vorgang:
 {"action":"notiz_anlegen","vorgang_id":5,"titel":"...","inhalt":"..."}
 \`\`\`
 
+Vorgang aktualisieren (Felder ändern oder entfernen, z. B. Deadline löschen):
+\`\`\`json
+{"action":"vorgang_aktualisieren","vorgang_id":5,"deadline":null}
+\`\`\`
+Erlaubte Felder: titel, typ, status, prioritaet, deadline, beschreibung. Setze ein Feld auf null um es zu löschen.
+
 Antworte immer auf Deutsch. Sei präzise und direkt. Nutze **fett** für Wichtiges.
 Bei Vorgangs-Vorschlägen: nenne den Vorgang immer beim Namen aus dem Schema "Thema + Jahr/Datum".`;
 }
@@ -394,6 +400,18 @@ export async function executeAction(action) {
         [action.vorgang_id, 'notiz', action.titel, action.inhalt]
       );
       return { done: 'notiz_angelegt', id: result.insertId };
+    }
+
+    case 'vorgang_aktualisieren': {
+      const allowed = ['titel', 'typ', 'status', 'prioritaet', 'deadline', 'beschreibung'];
+      const updates = [], params = [];
+      for (const key of allowed) {
+        if (key in action) { updates.push(`${key} = ?`); params.push(action[key] ?? null); }
+      }
+      if (!updates.length) return { done: 'vorgang_unveraendert' };
+      params.push(action.vorgang_id);
+      await query(`UPDATE vorgaenge SET ${updates.join(', ')} WHERE id = ?`, params);
+      return { done: 'vorgang_aktualisiert', vorgang_id: action.vorgang_id, felder: Object.keys(action).filter(k => allowed.includes(k)) };
     }
 
     default:
