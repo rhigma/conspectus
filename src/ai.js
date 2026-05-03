@@ -1,7 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { randomUUID } from 'crypto';
 import { query, queryOne } from './db.js';
 import { getEmailContext } from './imap.js';
 import { vorgangOrdner, taskAnlegen } from './nextcloud.js';
+import { createCalDavEvent } from './caldav.js';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const MODEL_FAST  = process.env.MODEL_FAST  || 'claude-haiku-4-5-20251001';
@@ -120,6 +122,12 @@ Notiz zu Vorgang:
 \`\`\`json
 {"action":"notiz_anlegen","vorgang_id":5,"titel":"...","inhalt":"..."}
 \`\`\`
+
+Todo anlegen:
+\`\`\`json
+{"action":"todo_anlegen","vorgang_id":5,"titel":"...","beschreibung":"...","faellig_am":"2026-05-15","wichtig":true,"dringend":false}
+\`\`\`
+wichtig/dringend steuern die Eisenhower-Matrix (wichtig=true → terminieren, wichtig+dringend=true → sofort). faellig_am ist optional.
 
 Vorgang aktualisieren (Felder ändern oder entfernen, z. B. Deadline löschen):
 \`\`\`json
@@ -415,6 +423,38 @@ export async function executeAction(action) {
         [action.vorgang_id, 'notiz', action.titel, action.inhalt]
       );
       return { done: 'notiz_angelegt', id: result.insertId };
+    }
+
+    case 'todo_anlegen': {
+      const wichtig = action.wichtig !== false;
+      const dringend = !!action.dringend;
+      let eventUid = null;
+      let eventCalId = null;
+
+      if (action.faellig_am) {
+        const setting = await queryOne("SELECT value FROM settings WHERE `key` = 'todo_calendar_id'");
+        const calId = setting?.value ? parseInt(setting.value) : null;
+        if (calId) {
+          const quadrant = wichtig && dringend ? 'Sofort erledigen'
+            : wichtig ? 'Terminieren'
+            : dringend ? 'Delegieren' : 'Eliminieren';
+          eventUid = randomUUID();
+          await createCalDavEvent(calId, {
+            uid: eventUid,
+            title: `☑ ${action.titel}`,
+            start: action.faellig_am,
+            description: action.beschreibung ? `${action.beschreibung}\n[${quadrant}]` : `[${quadrant}]`,
+          });
+          eventCalId = calId;
+        }
+      }
+
+      const result = await query(
+        'INSERT INTO todos (vorgang_id, titel, beschreibung, faellig_am, wichtig, dringend, event_uid, calendar_id) VALUES (?,?,?,?,?,?,?,?)',
+        [action.vorgang_id, action.titel, action.beschreibung || null, action.faellig_am || null,
+         wichtig ? 1 : 0, dringend ? 1 : 0, eventUid, eventCalId]
+      );
+      return { done: 'todo_angelegt', id: result.insertId };
     }
 
     case 'vorgang_aktualisieren': {
