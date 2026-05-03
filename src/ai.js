@@ -46,15 +46,29 @@ async function buildSystemPrompt() {
     LIMIT 15
   `);
 
+  // Wiedervorlagen heute
+  const wiedervorlagen = await query(`
+    SELECT id, titel, wiedervorlage_am FROM vorgaenge
+    WHERE wiedervorlage_am IS NOT NULL AND wiedervorlage_am <= CURDATE() AND status != 'abgeschlossen'
+    ORDER BY wiedervorlage_am ASC LIMIT 10
+  `);
+
   const emailCtx = await getEmailContext(6);
 
   const vorgangCtx = vorgaenge.length
     ? '\n## Offene Vorgänge\n' + vorgaenge.map(v => {
         const dl = v.deadline ? ` | Deadline: ${new Date(v.deadline).toLocaleDateString('de-DE')}` : '';
+        const wv = v.wiedervorlage_am ? ` | Wiedervorlage: ${new Date(v.wiedervorlage_am).toLocaleDateString('de-DE')}` : '';
         const prio = ['', '🔴 Hoch', '🟡 Mittel', '🟢 Niedrig'][v.prioritaet] || '';
-        return `- #${v.id} ${prio} **${v.titel}** [${v.status}]${dl} | ${v.offene_delegationen} offene Delegationen`;
+        return `- #${v.id} ${prio} **${v.titel}** [${v.status}]${dl}${wv} | ${v.offene_delegationen} offene Delegationen`;
       }).join('\n')
     : '\n## Vorgänge\nKeine offenen Vorgänge.';
+
+  const wvCtx = wiedervorlagen.length
+    ? '\n## Wiedervorlage heute\n' + wiedervorlagen.map(v =>
+        `- #${v.id} **${v.titel}** (fällig seit: ${new Date(v.wiedervorlage_am).toLocaleDateString('de-DE')})`
+      ).join('\n')
+    : '';
 
   const delegCtx = ueberfaellig.length
     ? '\n## Überfällige Delegationen\n' + ueberfaellig.map(d =>
@@ -79,6 +93,7 @@ Vorgänge haben Namen wie "Vera 3 2026", "Brandschutzbegehung 2026", "Dienstlich
 - [PERSON_2] (eFöB)
 - [OWNER] (selbst)
 ${vorgangCtx}
+${wvCtx}
 ${delegCtx}
 ${termineCtx}
 ${emailCtx}
@@ -110,7 +125,7 @@ Vorgang aktualisieren (Felder ändern oder entfernen, z. B. Deadline löschen):
 \`\`\`json
 {"action":"vorgang_aktualisieren","vorgang_id":5,"deadline":null}
 \`\`\`
-Erlaubte Felder: titel, typ, status, prioritaet, deadline, beschreibung. Setze ein Feld auf null um es zu löschen.
+Erlaubte Felder: titel, typ, status, prioritaet, deadline, wiedervorlage_am, beschreibung. Setze ein Feld auf null um es zu löschen.
 
 Antworte immer auf Deutsch. Sei präzise und direkt. Nutze **fett** für Wichtiges.
 Bei Vorgangs-Vorschlägen: nenne den Vorgang immer beim Namen aus dem Schema "Thema + Jahr/Datum".`;
@@ -403,7 +418,7 @@ export async function executeAction(action) {
     }
 
     case 'vorgang_aktualisieren': {
-      const allowed = ['titel', 'typ', 'status', 'prioritaet', 'deadline', 'beschreibung'];
+      const allowed = ['titel', 'typ', 'status', 'prioritaet', 'deadline', 'wiedervorlage_am', 'beschreibung'];
       const updates = [], params = [];
       for (const key of allowed) {
         if (key in action) { updates.push(`${key} = ?`); params.push(action[key] ?? null); }

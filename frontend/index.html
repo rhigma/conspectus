@@ -565,6 +565,15 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
         <div id="termine-list"><div class="loading-row"><div class="spin"></div>Lade…</div></div>
       </div>
 
+      <!-- WIEDERVORLAGE -->
+      <div class="card" id="wv-card" style="display:none">
+        <div class="card-header">
+          <span class="card-title">↩ Wiedervorlage</span>
+          <span class="card-count" id="wv-count">–</span>
+        </div>
+        <div id="wv-list"></div>
+      </div>
+
       <!-- DELEGATIONEN – kompakt, unter Kalender -->
       <div class="card">
         <div class="card-header">
@@ -1154,7 +1163,37 @@ async function loadStats() {
 
 // ── DASHBOARD ──────────────────────────────────────────────────────────────────
 async function loadDashboard() {
-  await Promise.allSettled([loadBriefing(), loadDashTodos(), loadDelegationen(), loadEmails(), loadTermine()]);
+  await Promise.allSettled([loadBriefing(), loadDashTodos(), loadDelegationen(), loadEmails(), loadTermine(), loadWiedervorlage()]);
+}
+
+async function loadWiedervorlage() {
+  try {
+    const rows = await req('GET', '/vorgaenge/wiedervorlage');
+    const card = document.getElementById('wv-card');
+    const list = document.getElementById('wv-list');
+    const cnt  = document.getElementById('wv-count');
+    if (!rows.length) { card.style.display = 'none'; return; }
+    card.style.display = '';
+    cnt.textContent = rows.length;
+    list.innerHTML = rows.map(v => `
+      <div class="deleg-row" style="cursor:pointer" onclick="openVorgang(${v.id})">
+        <span class="vtag ${v.typ}" style="flex-shrink:0">${v.typ}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(v.titel)}</div>
+          <div style="font-size:11px;color:var(--ink3);font-family:'IBM Plex Mono',monospace">seit ${fmtDate(v.wiedervorlage_am)}</div>
+        </div>
+        <button class="tag-btn" style="flex-shrink:0;font-size:10px" onclick="event.stopPropagation();setWiedervorlage(${v.id},null)" title="Wiedervorlage entfernen">×</button>
+      </div>`).join('');
+  } catch(e) { /* still ok */ }
+}
+
+async function setWiedervorlage(id, datum) {
+  try {
+    await req('PATCH', `/vorgaenge/${id}`, { wiedervorlage_am: datum });
+    if (activeVorgangId === id) openVorgang(id);
+    loadWiedervorlage();
+    toast(datum ? 'Wiedervorlage gesetzt ✓' : 'Wiedervorlage entfernt ✓', 'ok');
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
 }
 
 async function loadDashTodos() {
@@ -1624,6 +1663,7 @@ async function openVorgang(id) {
         <option value="abgeschlossen"${v.status==='abgeschlossen'?' selected':''}>abgeschlossen</option>
       </select>`,
       v.deadline ? `<span class="vtag" style="background:var(--goldl);color:var(--gold)">${new Date(v.deadline).toLocaleDateString('de-DE')}</span>` : '',
+      v.wiedervorlage_am ? `<span class="vtag" style="background:var(--bluel);color:var(--blue);cursor:pointer" title="Wiedervorlage – klicken zum Entfernen" onclick="setWiedervorlage(${v.id},null)">↩ ${new Date(v.wiedervorlage_am).toLocaleDateString('de-DE')}</span>` : '',
     ].join('');
     renderDetail(v, todos);
   } catch(e) { document.getElementById('detail-body').innerHTML = '<div class="empty">Fehler: ' + esc(e.message) + '</div>'; }
@@ -1708,6 +1748,14 @@ function renderDetail(v, todos = []) {
         <div class="card-header"><span class="card-title">Beschreibung</span></div>
         <div style="font-size:12px;color:var(--ink2);line-height:1.65">${esc(v.beschreibung)}</div>
       </div>` : ''}
+      <div class="card" style="padding:14px">
+        <div class="card-header" style="margin-bottom:8px"><span class="card-title">↩ Wiedervorlage</span></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="date" id="wv-input-${v.id}" value="${v.wiedervorlage_am ? v.wiedervorlage_am.slice(0,10) : ''}" style="flex:1;padding:6px 8px;font-size:12px;border:1px solid var(--border);border-radius:var(--r);background:var(--paper2);color:var(--ink);font-family:'IBM Plex Mono',monospace"/>
+          <button class="tag-btn" onclick="setWiedervorlage(${v.id}, document.getElementById('wv-input-${v.id}').value||null)">Setzen</button>
+          ${v.wiedervorlage_am ? `<button class="tag-btn" onclick="setWiedervorlage(${v.id},null)">×</button>` : ''}
+        </div>
+      </div>
       <button class="new-vorgang-btn" style="background:var(--ink);width:100%" onclick="chatUeberVorgang(${v.id},'${esc(v.titel)}')">◈ KI fragen zu diesem Vorgang</button>
     </div>`;
 }

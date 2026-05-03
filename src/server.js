@@ -105,7 +105,7 @@ app.put('/vorgaenge/:id', async (req, res) => {
 
 app.patch('/vorgaenge/:id', async (req, res) => {
   try {
-    const allowed = ['titel', 'typ', 'status', 'prioritaet', 'deadline', 'beschreibung'];
+    const allowed = ['titel', 'typ', 'status', 'prioritaet', 'deadline', 'beschreibung', 'wiedervorlage_am'];
     const updates = [], params = [];
     for (const key of allowed) {
       if (key in req.body) { updates.push(`${key} = ?`); params.push(req.body[key] ?? null); }
@@ -114,6 +114,18 @@ app.patch('/vorgaenge/:id', async (req, res) => {
     params.push(req.params.id);
     await query(`UPDATE vorgaenge SET ${updates.join(', ')} WHERE id = ?`, params);
     res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/vorgaenge/wiedervorlage', async (req, res) => {
+  try {
+    const rows = await query(
+      `SELECT id, titel, typ, status, prioritaet, deadline, wiedervorlage_am
+       FROM vorgaenge
+       WHERE wiedervorlage_am IS NOT NULL AND wiedervorlage_am <= CURDATE() AND status != 'abgeschlossen'
+       ORDER BY wiedervorlage_am ASC`
+    );
+    res.json(rows);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
