@@ -4,6 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Conspectus · Schulleitung</title>
+<link rel="icon" type="image/svg+xml" href="logo-dunkel.svg"/>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
 <script>if(localStorage.getItem('ki_dark')==='1')document.documentElement.setAttribute('data-theme','dark')</script>
@@ -47,7 +48,9 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
 
 /* ── LOGIN ── */
 #login{position:fixed;inset:0;background:var(--ink);display:flex;align-items:center;justify-content:center;z-index:500}
-.login-inner{width:340px;padding:48px 40px;background:var(--paper);border-radius:2px}
+.login-inner{width:340px;padding:40px 40px 48px;background:var(--paper);border-radius:2px}
+.login-logo{display:flex;justify-content:center;margin-bottom:20px}
+.login-logo img{height:72px;width:auto}
 .login-wordmark{font-family:'Playfair Display',serif;font-size:22px;color:var(--ink);margin-bottom:4px;letter-spacing:-.02em}
 .login-sub{font-size:11px;color:var(--ink3);font-family:'IBM Plex Mono',monospace;letter-spacing:.08em;text-transform:uppercase;margin-bottom:32px}
 .lf label{display:block;font-size:10px;font-family:'IBM Plex Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);margin-bottom:6px}
@@ -87,7 +90,12 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
 
 /* SIDEBAR */
 .sidebar{background:var(--paper2);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
-.nav-section{padding:16px 0 8px}
+.sidebar-logo-wrap{padding:20px 18px 8px;display:flex;justify-content:center}
+.sidebar-logo-wrap img{height:56px;width:auto;display:block}
+.logo-dark{display:none}
+[data-theme="dark"] .logo-light{display:none}
+[data-theme="dark"] .logo-dark{display:block}
+.nav-section{padding:8px 0 8px}
 .nav-label{font-size:9px;font-family:'IBM Plex Mono',monospace;letter-spacing:.15em;text-transform:uppercase;color:var(--ink3);padding:0 18px;margin-bottom:6px}
 .nav-item{display:flex;align-items:center;gap:10px;padding:8px 18px;cursor:pointer;font-size:12px;color:var(--ink2);transition:all .12s;border-left:3px solid transparent;font-family:'IBM Plex Sans',sans-serif}
 .nav-item:hover{color:var(--ink);background:var(--paper3)}
@@ -464,6 +472,10 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
 <!-- LOGIN -->
 <div id="login">
   <div class="login-inner">
+    <div class="login-logo">
+      <img src="logo-hell.svg" class="logo-light" alt="Conspectus"/>
+      <img src="logo-dunkel.svg" class="logo-dark" alt="Conspectus"/>
+    </div>
     <div class="login-wordmark">Conspectus</div>
     <div class="login-sub">Schulleitung</div>
     <div class="lf"><label>API Secret</label><input type="password" id="ls" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"/></div>
@@ -492,6 +504,10 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
   </div>
 
   <div class="sidebar">
+    <div class="sidebar-logo-wrap">
+      <img src="logo-hell.svg" class="logo-light" alt="Conspectus"/>
+      <img src="logo-dunkel.svg" class="logo-dark" alt="Conspectus"/>
+    </div>
     <div class="nav-section">
       <div class="nav-label">Navigation</div>
       <div class="nav-item active" id="n-dash" onclick="showView('dash')"><span class="nav-icon">⊞</span>Dashboard</div>
