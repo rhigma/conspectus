@@ -865,6 +865,21 @@ if (!global._pushCronStarted) {
     } catch(e) { console.error('[Push] Delegation-Cron:', e.message); }
   });
 
+  // Todo-Erinnerungen täglich um 8:05
+  cron.schedule('5 8 * * *', async () => {
+    try {
+      const { pushTodosFaellig } = await import('./pushover.js');
+      const todos = await query(`
+        SELECT t.titel, t.faellig_am, v.titel as vorgang_titel
+        FROM todos t JOIN vorgaenge v ON v.id = t.vorgang_id
+        WHERE t.erledigt = 0 AND t.faellig_am IS NOT NULL AND DATE(t.faellig_am) <= CURDATE()
+        ORDER BY t.faellig_am ASC
+        LIMIT 20
+      `);
+      if (todos.length) await pushTodosFaellig(todos);
+    } catch(e) { console.error('[Push] Todo-Cron:', e.message); }
+  });
+
   // Termin-Erinnerungen alle 15 Min. prüfen
   cron.schedule('*/15 * * * *', async () => {
     try {

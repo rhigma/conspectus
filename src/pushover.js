@@ -106,6 +106,29 @@ export async function pushTerminErinnerung(titel, startTime, location) {
   });
 }
 
+export async function pushTodosFaellig(todos) {
+  if (!todos.length) return { ok: true, skipped: true };
+  const faellig = todos.filter(t => {
+    const d = new Date(t.faellig_am);
+    const heute = new Date(); heute.setHours(0,0,0,0);
+    return d < heute;
+  });
+  const heute = todos.filter(t => {
+    const d = new Date(t.faellig_am);
+    const h = new Date(); h.setHours(0,0,0,0);
+    const morgen = new Date(h); morgen.setDate(h.getDate() + 1);
+    return d >= h && d < morgen;
+  });
+  const zeilen = [];
+  if (faellig.length) zeilen.push(`⚠ Überfällig (${faellig.length}): ${faellig.map(t => t.titel).join(', ')}`);
+  if (heute.length)   zeilen.push(`📌 Heute fällig (${heute.length}): ${heute.map(t => t.titel).join(', ')}`);
+  return push(
+    `✅ Todo-Erinnerung (${todos.length})`,
+    zeilen.join('\n').slice(0, 1024),
+    { url: process.env.APP_URL || '', url_title: 'Öffnen' }
+  );
+}
+
 export async function pushTest() {
   return push(
     'KI-Assistent',
