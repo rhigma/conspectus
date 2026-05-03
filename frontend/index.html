@@ -347,6 +347,8 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
 .input-wrap textarea::placeholder{color:var(--ink3)}
 .icon-btn{background:none;border:none;cursor:pointer;color:var(--ink3);font-size:15px;padding:2px;transition:color .15s}
 .icon-btn:hover{color:var(--accent)}
+.icon-btn.recording{color:#d32f2f;animation:pulse-mic .8s ease-in-out infinite alternate}
+@keyframes pulse-mic{from{opacity:1}to{opacity:.35}}
 .send-btn{padding:10px 18px;background:var(--accent);color:#fff;border:none;border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:12px;cursor:pointer;transition:background .15s;letter-spacing:.04em}
 .send-btn:hover{background:var(--accent2)}
 .send-btn:disabled{opacity:.4;cursor:not-allowed}
@@ -650,6 +652,7 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
             <textarea id="ta" rows="1" placeholder="Frage stellen, Vorgang anlegen, Delegation erstellen…" oninput="autoGrow(this)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}"></textarea>
             <button class="icon-btn" title="Foto / reMarkable-Notiz" onclick="document.getElementById('fi').click()">📷</button>
             <input type="file" id="fi" accept="image/*,application/pdf" multiple hidden onchange="addImgs(this)"/>
+            <button class="icon-btn" id="mic-btn" title="Spracheingabe" onclick="startVoice()">🎤</button>
           </div>
           <button class="send-btn" id="sbtn" onclick="sendChat()">Senden</button>
         </div>
@@ -2469,6 +2472,26 @@ function esc(s){ if(!s)return''; const d=document.createElement('div');d.textCon
 function fmtDate(iso){ if(!iso)return'–';const d=new Date(iso),n=new Date();return d.toDateString()===n.toDateString()?d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}):d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'}); }
 function fmtDateTime(iso){ return iso?new Date(iso).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'–'; }
 function autoGrow(el){ el.style.height='auto';el.style.height=Math.min(el.scrollHeight,100)+'px'; }
+let _voiceRec=null;
+function startVoice(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){alert('Spracheingabe wird von diesem Browser nicht unterstützt (Chrome/Edge empfohlen).');return;}
+  const btn=document.getElementById('mic-btn');
+  if(_voiceRec){_voiceRec.stop();return;}
+  const r=new SR();
+  r.lang='de-DE';r.interimResults=false;r.maxAlternatives=1;
+  _voiceRec=r;
+  btn.classList.add('recording');
+  r.onresult=e=>{
+    const ta=document.getElementById('ta');
+    const t=e.results[0][0].transcript;
+    ta.value=(ta.value?ta.value+' ':'')+t;
+    autoGrow(ta);ta.focus();
+  };
+  r.onend=()=>{_voiceRec=null;btn.classList.remove('recording');};
+  r.onerror=()=>{_voiceRec=null;btn.classList.remove('recording');};
+  r.start();
+}
 function setStatus(ok){ document.getElementById('sdot').className='sdot'+(ok?'':' err');document.getElementById('stxt').textContent=ok?'verbunden':'Fehler'; }
 function renderMd(t) {
   if (!t) return '';
