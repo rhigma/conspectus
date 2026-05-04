@@ -557,12 +557,14 @@ export async function executeAction(action) {
           const quadrant = newWichtig && newDringend ? 'Sofort erledigen'
             : newWichtig ? 'Terminieren'
             : newDringend ? 'Delegieren' : 'Eliminieren';
+          const newUid = randomUUID();
           await createCalDavEvent(todo.calendar_id, {
-            uid: todo.event_uid,
+            uid: newUid,
             title: `☑ ${newTitel}`,
             start: newFaellig,
             description: `[${quadrant}]`,
           });
+          await query('UPDATE todos SET event_uid = ? WHERE id = ?', [newUid, action.todo_id]);
         } else {
           await query('UPDATE todos SET event_uid = NULL, calendar_id = NULL WHERE id = ?', [action.todo_id]);
         }
