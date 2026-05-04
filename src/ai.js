@@ -1,9 +1,10 @@
-import Anthropic from '@anthropic-ai/sdk';
+﻿import Anthropic from '@anthropic-ai/sdk';
 import { randomUUID } from 'crypto';
 import { query, queryOne } from './db.js';
-import { getEmailContext } from './imap.js';
+import { getEmailContext, moveToErledigt } from './imap.js';
 import { vorgangOrdner, taskAnlegen } from './nextcloud.js';
-import { createCalDavEvent } from './caldav.js';
+import { createCalDavEvent, deleteCalDavEvent } from './caldav.js';
+import { sendReply } from './smtp.js';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const MODEL_FAST  = process.env.MODEL_FAST  || 'claude-haiku-4-5-20251001';
@@ -57,6 +58,18 @@ async function buildSystemPrompt() {
 
   const emailCtx = await getEmailContext(6);
 
+  // Offene Todos
+  const offeneTodos = await query(`
+    SELECT t.id, t.titel, t.wichtig, t.dringend, t.faellig_am, v.titel as vorgang_titel
+    FROM todos t JOIN vorgaenge v ON v.id = t.vorgang_id
+    WHERE t.erledigt = 0
+    ORDER BY t.wichtig DESC, t.dringend DESC, t.faellig_am ASC
+    LIMIT 15
+  `);
+
+  // Aktive Kalender
+  const kalender = await query(`SELECT id, label FROM calendars WHERE active = 1 LIMIT 10`);
+
   const vorgangCtx = vorgaenge.length
     ? '\n## Offene Vorgänge\n' + vorgaenge.map(v => {
         const dl = v.deadline ? ` | Deadline: ${new Date(v.deadline).toLocaleDateString('de-DE')}` : '';
@@ -85,6 +98,18 @@ async function buildSystemPrompt() {
       }).join('\n')
     : '';
 
+  const todosCtx = offeneTodos.length
+    ? '\n## Offene Todos\n' + offeneTodos.map(t => {
+        const q = t.wichtig && t.dringend ? 'Sofort' : t.wichtig ? 'Planen' : t.dringend ? 'Delegieren' : 'Eliminieren';
+        const dl = t.faellig_am ? ` | fällig: ${new Date(t.faellig_am).toLocaleDateString('de-DE')}` : '';
+        return `- #${t.id} [${q}] **${t.titel}** (${t.vorgang_titel})${dl}`;
+      }).join('\n')
+    : '';
+
+  const kalenderCtx = kalender.length
+    ? '\n## Kalender\n' + kalender.map(k => `- #${k.id} ${k.label}`).join('\n')
+    : '';
+
   return `Du bist der persönliche KI-Assistent von ${process.env.OWNER_NAME || "der Schulleitung"}. Heute ist ${now}.
 
 Du arbeitest vorgangszentriert: Alle Informationen werden Vorgängen zugeordnet. 
@@ -98,24 +123,52 @@ ${vorgangCtx}
 ${wvCtx}
 ${delegCtx}
 ${termineCtx}
+${todosCtx}
+${kalenderCtx}
 ${emailCtx}
 
 ## Deine Fähigkeiten
-Du kannst Aktionen auslösen indem du am Ende deiner Antwort einen JSON-Block einfügst:
+Du kannst Aktionen auslösen indem du JSON-Blöcke in deine Antwort einfügst. **Mehrere Blöcke sind erlaubt** – alle werden ausgeführt.
 
 Vorgang anlegen:
 \`\`\`json
 {"action":"vorgang_anlegen","titel":"...","typ":"personal|behoerde|veranstaltung|planung|sonstiges","prioritaet":1,"deadline":"2026-06-01","beschreibung":"..."}
 \`\`\`
 
+Vorgang abschließen / Status ändern:
+\`\`\`json
+{"action":"vorgang_aktualisieren","vorgang_id":5,"status":"abgeschlossen"}
+\`\`\`
+Erlaubte Felder: titel, typ, status (offen|in_bearbeitung|wartet|abgeschlossen), prioritaet, deadline, wiedervorlage_am, beschreibung. null löscht ein Feld.
+
 E-Mail einem Vorgang zuordnen:
 \`\`\`json
 {"action":"email_zuordnen","email_id":123,"vorgang_id":5}
 \`\`\`
 
+E-Mail als erledigt markieren:
+\`\`\`json
+{"action":"email_erledigen","email_id":123}
+\`\`\`
+
+E-Mail beantworten (Text vollständig ausformulieren):
+\`\`\`json
+{"action":"email_antworten","email_id":123,"text":"...","vorgang_id":5}
+\`\`\`
+
 Delegation anlegen:
 \`\`\`json
 {"action":"delegation_anlegen","vorgang_id":5,"an_name":"[PERSON_1]","an_rolle":"sekretariat","aufgabe":"...","deadline":"2026-05-15"}
+\`\`\`
+
+Delegation als erledigt markieren:
+\`\`\`json
+{"action":"delegation_erledigen","delegation_id":7}
+\`\`\`
+
+Delegation aktualisieren:
+\`\`\`json
+{"action":"delegation_aktualisieren","delegation_id":7,"deadline":"2026-06-01","notiz":"...","aufgabe":"..."}
 \`\`\`
 
 Notiz zu Vorgang:
@@ -129,11 +182,27 @@ Todo anlegen:
 \`\`\`
 wichtig/dringend steuern die Eisenhower-Matrix (wichtig=true → terminieren, wichtig+dringend=true → sofort). faellig_am ist optional.
 
-Vorgang aktualisieren (Felder ändern oder entfernen, z. B. Deadline löschen):
+Todo aktualisieren (Datum verschieben, Felder ändern):
 \`\`\`json
-{"action":"vorgang_aktualisieren","vorgang_id":5,"deadline":null}
+{"action":"todo_aktualisieren","todo_id":3,"faellig_am":"2026-05-16"}
 \`\`\`
-Erlaubte Felder: titel, typ, status, prioritaet, deadline, wiedervorlage_am, beschreibung. Setze ein Feld auf null um es zu löschen.
+Erlaubte Felder: titel, beschreibung, faellig_am, wichtig, dringend. Nur geänderte Felder. faellig_am null entfernt das Datum.
+
+Todo als erledigt markieren:
+\`\`\`json
+{"action":"todo_erledigen","todo_id":3}
+\`\`\`
+
+Todo löschen:
+\`\`\`json
+{"action":"todo_loeschen","todo_id":3}
+\`\`\`
+
+Termin anlegen (Kalender-IDs aus dem Kontext oben):
+\`\`\`json
+{"action":"event_anlegen","kalender_id":1,"titel":"...","start":"2026-05-15T10:00","ende":"2026-05-15T11:00","ort":"...","beschreibung":"...","vorgang_id":5}
+\`\`\`
+ende und ort sind optional. vorgang_id optional.
 
 Antworte immer auf Deutsch. Sei präzise und direkt. Nutze **fett** für Wichtiges.
 Bei Vorgangs-Vorschlägen: nenne den Vorgang immer beim Namen aus dem Schema "Thema + Jahr/Datum".`;
@@ -157,7 +226,7 @@ export async function chat({ history = [], text, images = [], smart = false }) {
 
   const response = await client.messages.create({
     model,
-    max_tokens: 1500,
+    max_tokens: 2500,
     system: await buildSystemPrompt(),
     messages,
   });
@@ -174,16 +243,18 @@ export async function chat({ history = [], text, images = [], smart = false }) {
     ['assistant', assistantText, model, 0, response.usage.output_tokens]
   );
 
-  const action = extractAction(assistantText);
-  let actionResult = null;
-  if (action) actionResult = await executeAction(action);
+  const actions = extractActions(assistantText);
+  const actionResults = [];
+  for (const a of actions) {
+    actionResults.push(await executeAction(a));
+  }
 
   return {
     text: assistantText,
     model,
     tokens: { in: response.usage.input_tokens, out: response.usage.output_tokens },
-    action,
-    actionResult,
+    actions,
+    actionResults,
   };
 }
 
@@ -358,10 +429,11 @@ Sei prägnant. Keine langen Erklärungen.`,
 
 // ── Aktionen ausführen ────────────────────────────────────────────────────────
 
-function extractAction(text) {
-  const match = text.match(/```json\s*([\s\S]*?)```/);
-  if (!match) return null;
-  try { return JSON.parse(match[1].trim()); } catch { return null; }
+function extractActions(text) {
+  const matches = [...text.matchAll(/```json\s*([\s\S]*?)```/g)];
+  return matches
+    .map(m => { try { return JSON.parse(m[1].trim()); } catch { return null; } })
+    .filter(a => a?.action);
 }
 
 export async function executeAction(action) {
@@ -457,6 +529,64 @@ export async function executeAction(action) {
       return { done: 'todo_angelegt', id: result.insertId };
     }
 
+    case 'todo_aktualisieren': {
+      const todo = await queryOne('SELECT * FROM todos WHERE id = ?', [action.todo_id]);
+      if (!todo) return { error: 'todo_nicht_gefunden', id: action.todo_id };
+
+      const allowed = ['titel', 'beschreibung', 'faellig_am', 'wichtig', 'dringend'];
+      const updates = [], params = [];
+      for (const key of allowed) {
+        if (key in action) {
+          updates.push(`${key} = ?`);
+          if (key === 'wichtig' || key === 'dringend') params.push(action[key] ? 1 : 0);
+          else params.push(action[key] ?? null);
+        }
+      }
+      if (!updates.length) return { done: 'todo_unveraendert' };
+      params.push(action.todo_id);
+      await query(`UPDATE todos SET ${updates.join(', ')} WHERE id = ?`, params);
+
+      const newFaellig = 'faellig_am' in action ? action.faellig_am : todo.faellig_am;
+      const newTitel = 'titel' in action ? action.titel : todo.titel;
+      const newWichtig = 'wichtig' in action ? !!action.wichtig : !!todo.wichtig;
+      const newDringend = 'dringend' in action ? !!action.dringend : !!todo.dringend;
+
+      if (todo.event_uid && todo.calendar_id) {
+        await deleteCalDavEvent(todo.calendar_id, todo.event_uid).catch(() => {});
+        if (newFaellig) {
+          const quadrant = newWichtig && newDringend ? 'Sofort erledigen'
+            : newWichtig ? 'Terminieren'
+            : newDringend ? 'Delegieren' : 'Eliminieren';
+          await createCalDavEvent(todo.calendar_id, {
+            uid: todo.event_uid,
+            title: `☑ ${newTitel}`,
+            start: newFaellig,
+            description: `[${quadrant}]`,
+          });
+        } else {
+          await query('UPDATE todos SET event_uid = NULL, calendar_id = NULL WHERE id = ?', [action.todo_id]);
+        }
+      } else if (!todo.event_uid && newFaellig) {
+        const setting = await queryOne("SELECT value FROM settings WHERE `key` = 'todo_calendar_id'");
+        const calId = setting?.value ? parseInt(setting.value) : null;
+        if (calId) {
+          const quadrant = newWichtig && newDringend ? 'Sofort erledigen'
+            : newWichtig ? 'Terminieren'
+            : newDringend ? 'Delegieren' : 'Eliminieren';
+          const uid = randomUUID();
+          await createCalDavEvent(calId, {
+            uid,
+            title: `☑ ${newTitel}`,
+            start: newFaellig,
+            description: `[${quadrant}]`,
+          });
+          await query('UPDATE todos SET event_uid = ?, calendar_id = ? WHERE id = ?', [uid, calId, action.todo_id]);
+        }
+      }
+
+      return { done: 'todo_aktualisiert', id: action.todo_id };
+    }
+
     case 'vorgang_aktualisieren': {
       const allowed = ['titel', 'typ', 'status', 'prioritaet', 'deadline', 'wiedervorlage_am', 'beschreibung'];
       const updates = [], params = [];
@@ -467,6 +597,93 @@ export async function executeAction(action) {
       params.push(action.vorgang_id);
       await query(`UPDATE vorgaenge SET ${updates.join(', ')} WHERE id = ?`, params);
       return { done: 'vorgang_aktualisiert', vorgang_id: action.vorgang_id, felder: Object.keys(action).filter(k => allowed.includes(k)) };
+    }
+
+    case 'todo_erledigen': {
+      const todo = await queryOne('SELECT * FROM todos WHERE id = ?', [action.todo_id]);
+      if (!todo) return { error: 'todo_nicht_gefunden', id: action.todo_id };
+      await query('UPDATE todos SET erledigt = 1, erledigt_am = NOW() WHERE id = ?', [action.todo_id]);
+      if (todo.event_uid && todo.calendar_id) {
+        await deleteCalDavEvent(todo.calendar_id, todo.event_uid).catch(() => {});
+      }
+      return { done: 'todo_erledigt', id: action.todo_id, titel: todo.titel };
+    }
+
+    case 'todo_loeschen': {
+      const todo = await queryOne('SELECT * FROM todos WHERE id = ?', [action.todo_id]);
+      if (!todo) return { error: 'todo_nicht_gefunden', id: action.todo_id };
+      if (todo.event_uid && todo.calendar_id) {
+        await deleteCalDavEvent(todo.calendar_id, todo.event_uid).catch(() => {});
+      }
+      await query('DELETE FROM todos WHERE id = ?', [action.todo_id]);
+      return { done: 'todo_geloescht', id: action.todo_id, titel: todo.titel };
+    }
+
+    case 'delegation_erledigen': {
+      await query("UPDATE delegationen SET status = 'erledigt' WHERE id = ?", [action.delegation_id]);
+      return { done: 'delegation_erledigt', id: action.delegation_id };
+    }
+
+    case 'delegation_aktualisieren': {
+      const allowed = ['deadline', 'notiz', 'aufgabe'];
+      const updates = [], params = [];
+      for (const key of allowed) {
+        if (key in action) { updates.push(`${key} = ?`); params.push(action[key] ?? null); }
+      }
+      if (!updates.length) return { done: 'delegation_unveraendert' };
+      params.push(action.delegation_id);
+      await query(`UPDATE delegationen SET ${updates.join(', ')} WHERE id = ?`, params);
+      return { done: 'delegation_aktualisiert', id: action.delegation_id };
+    }
+
+    case 'email_erledigen': {
+      const email = await queryOne(
+        'SELECT e.*, a.host, a.port, a.username, a.password, a.tls FROM emails e JOIN email_accounts a ON a.id = e.account_id WHERE e.id = ?',
+        [action.email_id]
+      );
+      if (!email) return { error: 'email_nicht_gefunden', id: action.email_id };
+      await query('UPDATE emails SET erledigt = 1, unread = 0 WHERE id = ?', [action.email_id]);
+      await moveToErledigt(email, email.uid).catch(() => {});
+      return { done: 'email_erledigt', id: action.email_id };
+    }
+
+    case 'email_antworten': {
+      const email = await queryOne('SELECT * FROM emails WHERE id = ?', [action.email_id]);
+      if (!email) return { error: 'email_nicht_gefunden', id: action.email_id };
+      await sendReply({
+        accountId: email.account_id,
+        toEmail: email.from_email,
+        toName: email.from_name,
+        subject: email.subject,
+        body: action.text,
+        inReplyTo: email.message_id,
+        references: email.message_id,
+      });
+      if (action.vorgang_id) {
+        await query(
+          'INSERT INTO vorgang_eintraege (vorgang_id, typ, titel, inhalt) VALUES (?,?,?,?)',
+          [action.vorgang_id, 'email', `Antwort: ${email.subject}`, action.text]
+        );
+      }
+      return { done: 'email_beantwortet', id: action.email_id };
+    }
+
+    case 'event_anlegen': {
+      const calId = action.kalender_id || (await queryOne('SELECT id FROM calendars WHERE active = 1 ORDER BY id ASC LIMIT 1'))?.id;
+      if (!calId) return { error: 'kein_kalender' };
+      const uid = randomUUID();
+      await createCalDavEvent(calId, {
+        uid,
+        title: action.titel,
+        start: action.start,
+        end: action.ende || null,
+        description: action.beschreibung || null,
+      });
+      await query(
+        'INSERT INTO events (vorgang_id, calendar_id, uid, title, start_time, end_time, location, description) VALUES (?,?,?,?,?,?,?,?)',
+        [action.vorgang_id || null, calId, uid, action.titel, action.start, action.ende || null, action.ort || null, action.beschreibung || null]
+      );
+      return { done: 'event_angelegt', uid, titel: action.titel };
     }
 
     default:

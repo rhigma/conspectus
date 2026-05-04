@@ -807,6 +807,66 @@ app.post('/todos/:id/erledigt', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+app.patch('/todos/:id', async (req, res) => {
+  try {
+    const todo = await queryOne('SELECT * FROM todos WHERE id = ?', [req.params.id]);
+    if (!todo) return res.status(404).json({ error: 'Nicht gefunden' });
+
+    const allowed = ['titel', 'beschreibung', 'faellig_am', 'wichtig', 'dringend'];
+    const updates = [], params = [];
+    for (const key of allowed) {
+      if (key in req.body) {
+        updates.push(`${key} = ?`);
+        if (key === 'wichtig' || key === 'dringend') params.push(req.body[key] ? 1 : 0);
+        else params.push(req.body[key] ?? null);
+      }
+    }
+    if (!updates.length) return res.json({ ok: true });
+    params.push(req.params.id);
+    await query(`UPDATE todos SET ${updates.join(', ')} WHERE id = ?`, params);
+
+    const newFaellig = 'faellig_am' in req.body ? req.body.faellig_am : todo.faellig_am;
+    const newTitel = 'titel' in req.body ? req.body.titel : todo.titel;
+    const newWichtig = 'wichtig' in req.body ? !!req.body.wichtig : !!todo.wichtig;
+    const newDringend = 'dringend' in req.body ? !!req.body.dringend : !!todo.dringend;
+
+    if (todo.event_uid && todo.calendar_id) {
+      await deleteCalDavEvent(todo.calendar_id, todo.event_uid).catch(() => {});
+      if (newFaellig) {
+        const quadrant = newWichtig && newDringend ? 'Sofort erledigen'
+          : newWichtig ? 'Terminieren'
+          : newDringend ? 'Delegieren' : 'Eliminieren';
+        await createCalDavEvent(todo.calendar_id, {
+          uid: todo.event_uid,
+          title: `☑ ${newTitel}`,
+          start: newFaellig,
+          description: `[${quadrant}]`,
+        });
+      } else {
+        await query('UPDATE todos SET event_uid = NULL, calendar_id = NULL WHERE id = ?', [req.params.id]);
+      }
+    } else if (!todo.event_uid && newFaellig) {
+      const setting = await queryOne("SELECT value FROM settings WHERE `key` = 'todo_calendar_id'");
+      const calId = setting?.value ? parseInt(setting.value) : null;
+      if (calId) {
+        const quadrant = newWichtig && newDringend ? 'Sofort erledigen'
+          : newWichtig ? 'Terminieren'
+          : newDringend ? 'Delegieren' : 'Eliminieren';
+        const uid = randomUUID();
+        await createCalDavEvent(calId, {
+          uid,
+          title: `☑ ${newTitel}`,
+          start: newFaellig,
+          description: `[${quadrant}]`,
+        });
+        await query('UPDATE todos SET event_uid = ?, calendar_id = ? WHERE id = ?', [uid, calId, req.params.id]);
+      }
+    }
+
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.delete('/todos/:id', async (req, res) => {
   try {
     const todo = await queryOne('SELECT * FROM todos WHERE id = ?', [req.params.id]);

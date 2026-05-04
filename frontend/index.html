@@ -1697,15 +1697,21 @@ function renderTodosCard(todos) {
     else if (t.dringend)          groups.q3.push(t);
     else                          groups.q4.push(t);
   }
-  const renderQ = ts => ts.map(t => `
+  const renderQ = ts => ts.map(t => {
+    const datStr = t.faellig_am ? t.faellig_am.slice(0,10) : '';
+    const datMeta = t.faellig_am
+      ? `<div class="todo-meta" style="display:flex;align-items:center;gap:4px"><span>${fmtDateTime(t.faellig_am)}</span><button class="todo-del" style="font-size:10px;padding:0 3px" onclick="todoFaelligBearbeiten(${t.id},'${datStr}')" title="Datum ändern">✎</button></div>`
+      : `<div class="todo-meta"><button class="todo-del" style="font-size:10px;padding:0 3px" onclick="todoFaelligBearbeiten(${t.id},'')" title="Datum setzen">+ Datum</button></div>`;
+    return `
     <div class="todo-item${t.erledigt?' erledigt':''}" id="todo-${t.id}">
       <button class="todo-check${t.erledigt?' done':''}" onclick="todoErledigt(${t.id})" title="Erledigt markieren">${t.erledigt?'✓':''}</button>
       <div style="flex:1;min-width:0">
         <div class="todo-name">${esc(t.titel)}</div>
-        ${t.faellig_am?`<div class="todo-meta">${fmtDateTime(t.faellig_am)}</div>`:''}
+        ${datMeta}
       </div>
       <button class="todo-del" onclick="todoLoeschen(${t.id})" title="Löschen">×</button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
   const empty = '<div class="ei-empty">–</div>';
   return `<div class="card" style="padding:14px">
     <div class="card-header" style="margin-bottom:10px">
@@ -1839,6 +1845,29 @@ async function todoLoeschen(id) {
   } catch(e) { toast('Fehler: ' + e.message, 'err'); }
 }
 
+async function todoFaelligBearbeiten(id, aktuell) {
+  const neu = prompt('Fälligkeitsdatum (JJJJ-MM-TT), leer = kein Datum:', aktuell);
+  if (neu === null) return;
+  const val = neu.trim() || null;
+  try {
+    await req('PATCH', `/todos/${id}`, { faellig_am: val });
+    toast('Datum gespeichert');
+    const item = document.getElementById(`todo-${id}`);
+    if (item) {
+      const meta = item.querySelector('.todo-meta');
+      if (meta) {
+        if (val) {
+          meta.innerHTML = `<span>${val}</span><button class="todo-del" style="font-size:10px;padding:0 3px" onclick="todoFaelligBearbeiten(${id},'${val}')" title="Datum ändern">✎</button>`;
+          meta.style.cssText = 'display:flex;align-items:center;gap:4px';
+        } else {
+          meta.innerHTML = `<button class="todo-del" style="font-size:10px;padding:0 3px" onclick="todoFaelligBearbeiten(${id},'')" title="Datum setzen">+ Datum</button>`;
+          meta.style.cssText = '';
+        }
+      }
+    }
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+}
+
 function toggleExpand(id, btn) {
   const el = document.getElementById(id);
   el.classList.toggle('expanded');
@@ -1964,10 +1993,11 @@ async function sendChat() {
       result = await req('POST', '/chat', { text, history:chatHistory.slice(-10), smart:false });
     }
     removeTyping(tid);
-    appendMsg('assistant', result.text, [], result.actionResult);
+    const results = result.actionResults || (result.actionResult ? [result.actionResult] : []);
+    appendMsg('assistant', result.text, [], results);
     chatHistory.push({role:'user',content:text});
     chatHistory.push({role:'assistant',content:result.text});
-    if (result.actionResult) { loadStats(); }
+    if (results.length) { loadStats(); }
   } catch(e) {
     removeTyping(tid);
     appendMsg('assistant', '⚠ Verbindungsfehler: ' + e.message);
@@ -1975,13 +2005,18 @@ async function sendChat() {
   document.getElementById('sbtn').disabled = false;
 }
 
-function appendMsg(role, text, imgUrls=[], action=null) {
+function appendMsg(role, text, imgUrls=[], actions=[]) {
   const el = document.getElementById('msgs');
   const d = document.createElement('div');
   d.className = 'msg' + (role==='user'?' u':'');
   const imgHtml = (imgUrls||[]).map(u=>`<img src="${u}" style="max-width:130px;border-radius:var(--r);margin-bottom:6px;display:block">`).join('');
-  const actionHtml = action ? `<div class="action-done">✓ ${esc(action.done||JSON.stringify(action))}</div>` : '';
-  d.innerHTML = `<div class="av">${role==='user'?'LB':'KI'}</div><div class="bubble">${imgHtml}${renderMd(text)}${actionHtml}</div>`;
+  const arr = Array.isArray(actions) ? actions : (actions ? [actions] : []);
+  const actionsHtml = arr.filter(Boolean).map(a =>
+    a.error
+      ? `<div class="action-done" style="color:var(--accent)">⚠ ${esc(a.error + (a.id ? ' #' + a.id : ''))}</div>`
+      : `<div class="action-done">✓ ${esc(a.done || JSON.stringify(a))}${a.titel ? ' – ' + esc(a.titel) : ''}</div>`
+  ).join('');
+  d.innerHTML = `<div class="av">${role==='user'?'LB':'KI'}</div><div class="bubble">${imgHtml}${renderMd(text)}${actionsHtml}</div>`;
   el.appendChild(d);
   el.scrollTop = el.scrollHeight;
 }
