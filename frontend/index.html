@@ -626,6 +626,7 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
           <h2>E-Mails</h2>
           <input class="search-input" id="emails-search" placeholder="Suchen…" oninput="filterEmailsView()" style="width:200px"/>
           <button class="filter-btn" id="emails-erledigt-toggle" onclick="toggleEmailsErledigt()">Nicht erledigt</button>
+          <button class="filter-btn" id="emails-sync-btn" onclick="doSync(true)">↺ Sync</button>
           <span id="emails-count" style="font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace"></span>
         </div>
         <div class="theme-chips" id="emails-chips"></div>
@@ -2505,14 +2506,20 @@ async function gitPull() {
   }
 }
 
-async function doSync() {
+async function doSync(fromEmailTab = false) {
+  const btn = document.getElementById('emails-sync-btn');
+  if (btn) { btn.textContent = '↺ …'; btn.disabled = true; }
   toast('Synchronisiere…');
   try {
     const r = await req('POST', '/sync');
     const neu = r.email?.reduce((s,a)=>s+(a.new||0),0)||0;
     toast(`Sync abgeschlossen · ${neu} neue E-Mails ✓`, 'ok');
     loadStats(); loadDashboard();
+    if (fromEmailTab) loadEmails();
   } catch(e) { toast('Sync fehlgeschlagen: ' + e.message, 'err'); }
+  finally {
+    if (btn) { btn.textContent = '↺ Sync'; btn.disabled = false; }
+  }
 }
 
 // ── MODALS ─────────────────────────────────────────────────────────────────────

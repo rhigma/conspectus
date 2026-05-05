@@ -307,17 +307,17 @@ app.post('/sync', async (req, res) => {
   try {
     const emailResults = await syncAllAccounts();
 
-    // Neue E-Mails automatisch einordnen
+    // Neue E-Mails automatisch einordnen (parallel)
     const unzugeordnet = await query(
       'SELECT * FROM emails WHERE vorgang_id IS NULL AND ki_einordnung IS NULL ORDER BY date DESC LIMIT 10'
     );
-    for (const email of unzugeordnet) {
+    await Promise.all(unzugeordnet.map(async email => {
       const einordnung = await emailEinordnen(email);
       if (einordnung) {
         await query('UPDATE emails SET ki_einordnung = ? WHERE id = ?',
           [JSON.stringify(einordnung), email.id]);
       }
-    }
+    }));
 
     res.json({ email: emailResults, eingeordnet: unzugeordnet.length });
   } catch (e) { res.status(500).json({ error: e.message }); }

@@ -7,9 +7,8 @@ const MAX_EMAILS = 200;
 
 export async function syncAllAccounts() {
   const accounts = await query('SELECT * FROM email_accounts WHERE active = 1');
-  const results = [];
 
-  for (const acc of accounts) {
+  const results = await Promise.all(accounts.map(async acc => {
     const start = Date.now();
     try {
       const count = await syncAccount(acc);
@@ -17,15 +16,15 @@ export async function syncAllAccounts() {
         'INSERT INTO sync_log (type, status, message, duration_ms) VALUES (?,?,?,?)',
         ['email', 'ok', `${acc.email}: ${count} neue`, Date.now() - start]
       );
-      results.push({ account: acc.label, status: 'ok', new: count });
+      return { account: acc.label, status: 'ok', new: count };
     } catch (err) {
       await query(
         'INSERT INTO sync_log (type, status, message, duration_ms) VALUES (?,?,?,?)',
         ['email', 'error', `${acc.email}: ${err.message}`, Date.now() - start]
       );
-      results.push({ account: acc.label, status: 'error', error: err.message });
+      return { account: acc.label, status: 'error', error: err.message };
     }
-  }
+  }));
 
   // IMAP-Konten aus .env einmalig importieren wenn noch keine vorhanden
   await importEnvAccounts();
@@ -77,19 +76,27 @@ async function syncAccount(account) {
       const from = Math.max(1, total - MAX_EMAILS + 1);
 
       // Pass 1: Envelopes – neue UIDs ermitteln, \Answered-Flag prüfen
+      // Alle bekannten UIDs für dieses Konto vorab laden (1 DB-Query statt N)
+      const knownRows = await query(
+        'SELECT id, uid, erledigt FROM emails WHERE account_id = ?',
+        [account.id]
+      );
+      const knownByUid = new Map(knownRows.map(r => [r.uid, r]));
+
       const neueMsgs = [];
+      const answeredUpdates = [];
       for await (const msg of client.fetch(`${from}:${total}`, {
         uid: true, flags: true, envelope: true,
       })) {
-        const exists = await queryOne(
-          'SELECT id, erledigt FROM emails WHERE account_id = ? AND uid = ?',
-          [account.id, String(msg.uid)]
-        );
-        if (!exists) {
+        const existing = knownByUid.get(String(msg.uid));
+        if (!existing) {
           neueMsgs.push({ uid: msg.uid, flags: msg.flags, envelope: msg.envelope });
-        } else if (!exists.erledigt && msg.flags.has('\\Answered')) {
-          await query('UPDATE emails SET erledigt = 1 WHERE id = ?', [exists.id]);
+        } else if (!existing.erledigt && msg.flags.has('\\Answered')) {
+          answeredUpdates.push(existing.id);
         }
+      }
+      for (const id of answeredUpdates) {
+        await query('UPDATE emails SET erledigt = 1 WHERE id = ?', [id]);
       }
 
       // Pass 2: Body + Anhänge nur für neue E-Mails laden
