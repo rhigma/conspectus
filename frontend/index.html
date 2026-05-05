@@ -42,8 +42,13 @@
 [data-theme="dark"] .vorgaenge-toolbar{background:var(--paper2)}
 [data-theme="dark"] .detail-header{background:var(--paper2)}
 [data-theme="dark"] select,[data-theme="dark"] input,[data-theme="dark"] textarea{background:var(--paper3);color:var(--ink);border-color:var(--border)}
-[data-theme="dark"] .chat-input-area{background:var(--paper2);border-color:var(--border)}
-[data-theme="dark"] .chat-msg.assistant{background:var(--paper3)}
+[data-theme="dark"] .input-area{background:var(--paper2);border-color:var(--border)}
+[data-theme="dark"] .chat-header{background:var(--paper2)}
+[data-theme="dark"] .msg .bubble{background:var(--paper2)}
+[data-theme="dark"] .email-view-header{background:var(--paper2)}
+[data-theme="dark"] .email-action-card{background:var(--paper2)}
+[data-theme="dark"] .ki-analyse-box{background:var(--paper2)}
+[data-theme="dark"] .vorgang-card{background:var(--paper2)}
 [data-theme="dark"] code{background:var(--paper3)}
 html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans',sans-serif;overflow:hidden}
 
@@ -193,6 +198,8 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
 .search-input:focus{border-color:var(--accent)}
 .filter-btn{padding:6px 12px;border:1px solid var(--border);border-radius:var(--r);background:var(--paper);font-family:'IBM Plex Mono',monospace;font-size:10px;cursor:pointer;transition:all .15s;letter-spacing:.04em;text-transform:uppercase;color:var(--ink2)}
 .filter-btn.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.tag-btn{padding:3px 9px;border:1px solid var(--border);border-radius:var(--r);background:var(--paper);font-family:'IBM Plex Mono',monospace;font-size:10px;cursor:pointer;transition:all .15s;color:var(--ink2)}
+.tag-btn:hover{border-color:var(--accent2);color:var(--accent)}
 .new-vorgang-btn{padding:7px 14px;background:var(--accent);border:none;border-radius:var(--r);color:#fff;font-family:'IBM Plex Mono',monospace;font-size:11px;cursor:pointer;transition:background .15s;letter-spacing:.04em}
 .new-vorgang-btn:hover{background:var(--accent2)}
 
@@ -723,6 +730,7 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
             </select>
             <button class="email-action-btn primary" onclick="zuordnen()">→ Zuordnen</button>
             <button class="email-action-btn" onclick="neuerVorgangAusEmail()">+ Neuer Vorgang</button>
+            <button class="email-action-btn" id="ev-todo-btn" style="display:none;margin-top:4px" onclick="openNewTodoFromEmail()">☑ Todo anlegen</button>
           </div>
 
           <!-- KI-Analyse -->
@@ -1355,6 +1363,7 @@ async function loadEmails() {
 // ── E-MAIL VIEW ────────────────────────────────────────────────────────────────
 let activeEmailId = null;
 let activeEmailVorgangId = null;
+let _todoFromEmail = false;
 
 async function openEmail(id, fromView) {
   activeEmailId = id;
@@ -1373,6 +1382,7 @@ async function openEmail(id, fromView) {
   try {
     const email = await req('GET', `/emails/${id}`);
     activeEmailVorgangId = email.vorgang_id;
+    document.getElementById('ev-todo-btn').style.display = email.vorgang_id ? '' : 'none';
 
     document.getElementById('ev-subject').textContent = email.subject || '(kein Betreff)';
     document.getElementById('ev-from').textContent = email.from_name ? `${email.from_name} <${email.from_email}>` : email.from_email;
@@ -1440,6 +1450,7 @@ async function zuordnen() {
   try {
     await req('POST', `/emails/${activeEmailId}/zuordnen`, { vorgang_id: vorgangId });
     activeEmailVorgangId = vorgangId;
+    document.getElementById('ev-todo-btn').style.display = '';
     toast('E-Mail zugeordnet ✓', 'ok');
     loadStats();
   } catch(e) { toast('Fehler: ' + e.message, 'err'); }
@@ -1454,6 +1465,7 @@ async function neuerVorgangAusEmail() {
     const nv = await req('POST', '/vorgaenge', { titel, typ: 'sonstiges', prioritaet: 2 });
     await req('POST', `/emails/${activeEmailId}/zuordnen`, { vorgang_id: nv.id });
     activeEmailVorgangId = nv.id;
+    document.getElementById('ev-todo-btn').style.display = '';
     toast(`Vorgang "${titel}" angelegt und E-Mail zugeordnet ✓`, 'ok');
     // Dropdown aktualisieren
     const opt = document.createElement('option');
@@ -1791,6 +1803,20 @@ function renderDetail(v, todos = []) {
 // ── TODO-AKTIONEN ─────────────────────────────────────────────────────────────
 function openNewTodo() {
   if (!activeVorgangId) { toast('Kein Vorgang aktiv', 'err'); return; }
+  _todoFromEmail = false;
+  document.getElementById('nt-titel').value = '';
+  document.getElementById('nt-beschreibung').value = '';
+  document.getElementById('nt-faellig').value = '';
+  document.getElementById('nt-wichtig').checked = true;
+  document.getElementById('nt-dringend').checked = false;
+  updateQuadrant();
+  document.getElementById('m-todo').style.display = 'flex';
+  setTimeout(() => document.getElementById('nt-titel').focus(), 50);
+}
+
+function openNewTodoFromEmail() {
+  if (!activeEmailVorgangId) { toast('E-Mail noch keinem Vorgang zugeordnet', 'err'); return; }
+  _todoFromEmail = true;
   document.getElementById('nt-titel').value = '';
   document.getElementById('nt-beschreibung').value = '';
   document.getElementById('nt-faellig').value = '';
@@ -1817,14 +1843,15 @@ async function saveTodo() {
   const dringend = document.getElementById('nt-dringend').checked;
   const faellig  = document.getElementById('nt-faellig').value;
   const beschreibung = document.getElementById('nt-beschreibung').value.trim();
+  const vid = _todoFromEmail ? activeEmailVorgangId : activeVorgangId;
   try {
     await req('POST', '/todos', {
-      vorgang_id: activeVorgangId, titel, beschreibung: beschreibung || null,
+      vorgang_id: vid, titel, beschreibung: beschreibung || null,
       faellig_am: faellig || null, wichtig, dringend,
     });
     closeM('m-todo');
     toast('Aufgabe angelegt ✓', 'ok');
-    openVorgang(activeVorgangId);
+    if (!_todoFromEmail) openVorgang(activeVorgangId);
   } catch(e) { toast('Fehler: ' + e.message, 'err'); }
 }
 
