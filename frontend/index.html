@@ -157,6 +157,8 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
 .briefing-text td,.bubble td{padding:5px 10px;border-bottom:1px solid var(--paper2);color:var(--ink2)}
 .briefing-text tr:last-child td,.bubble tr:last-child td{border-bottom:none}
 .briefing-text strong,.briefing-bold,.bubble strong{color:var(--ink);font-weight:600}
+.md-link{color:var(--accent2);cursor:pointer;text-decoration:underline;font-weight:500}
+.md-link:hover{opacity:.75}
 
 /* E-MAIL ROWS */
 .email-row{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--paper2);cursor:pointer;transition:background .1s;align-items:flex-start}
@@ -2586,6 +2588,8 @@ function renderMd(t) {
   if (!t) return '';
   const inline = s => s
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/\[([^\]]+)\]\(vorgang:(\d+)\)/g,(_,t,id)=>`<a class="md-link" onclick="openVorgang(${id})">${t}</a>`)
+    .replace(/\[([^\]]+)\]\(email:(\d+)\)/g,  (_,t,id)=>`<a class="md-link" onclick="openEmail(${id},'emails')">${t}</a>`)
     .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
     .replace(/\*(.+?)\*/g,'<em>$1</em>')
     .replace(/`(.+?)`/g,'<code>$1</code>');

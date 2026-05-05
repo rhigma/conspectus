@@ -412,7 +412,9 @@ Struktur:
 4. **Neue unzugeordnete E-Mails** – kurze Übersicht
 5. **Empfehlung** – 1-2 Sätze: womit anfangen?
 
-Sei prägnant. Keine langen Erklärungen.`,
+Sei prägnant. Keine langen Erklärungen.
+
+Verlinke Vorgänge als [Titel](vorgang:ID) und E-Mails als [Betreff](email:ID), damit der Nutzer direkt dorthin springen kann. Die IDs stehen im Kontext bei jedem #ID-Eintrag.`,
     }],
   });
 

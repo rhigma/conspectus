@@ -246,7 +246,7 @@ export async function getEmailContext(limitPerAccount = 8) {
 
   for (const acc of accounts) {
     const emails = await query(
-      `SELECT from_name, from_email, subject, date, unread, body_text, vorgang_id
+      `SELECT id, from_name, from_email, subject, date, unread, body_text, vorgang_id
        FROM emails WHERE account_id = ?
        ORDER BY date DESC LIMIT ?`,
       [acc.id, limitPerAccount]
@@ -258,7 +258,7 @@ export async function getEmailContext(limitPerAccount = 8) {
       const d = e.date ? new Date(e.date).toLocaleString('de-DE') : '?';
       const v = e.vorgang_id ? `[Vorgang #${e.vorgang_id}] ` : '[nicht zugeordnet] ';
       const body = e.body_text ? '\n  Inhalt: ' + e.body_text.slice(0, 400).replace(/\n+/g, ' ') : '';
-      lines.push(`- ${u}${v}${e.from_name || e.from_email}: "${e.subject}" (${d})${body}`);
+      lines.push(`- #${e.id} ${u}${v}${e.from_name || e.from_email}: "${e.subject}" (${d})${body}`);
     }
   }
   return lines.length ? lines.join('\n') : 'Keine E-Mails gecacht.';
