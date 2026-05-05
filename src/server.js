@@ -7,7 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initSchema, query, queryOne } from './db.js';
 import { syncAllAccounts, moveToErledigt, syncErledigtStatus } from './imap.js';
-import { chat, executeAction, getTokenStats, emailEinordnen, notizAnalysieren, morgenbriefing } from './ai.js';
+import { chat, executeAction, getTokenStats, emailEinordnen, notizAnalysieren, morgenbriefing, naturalSearchQuery } from './ai.js';
 import { ncMkdir, neueRemarkableNotizen, remarkableVerarbeitet, ncDownload, vorgangOrdner } from './nextcloud.js';
 import { createCalDavEvent, deleteCalDavEvent } from './caldav.js';
 import { randomUUID } from 'crypto';
@@ -370,6 +370,132 @@ app.get('/search', async (req, res) => {
       ),
     ]);
     res.json({ vorgaenge, emails, delegationen });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── KI-SUCHE ──────────────────────────────────────────────────────────────────
+app.get('/search/ai', async (req, res) => {
+  try {
+    const q = (req.query.q || '').trim();
+    if (q.length < 3) return res.json({ vorgaenge: [], emails: [], delegationen: [], todos: [], erklaerung: '' });
+
+    const filter = await naturalSearchQuery(q);
+    if (!filter) return res.status(500).json({ error: 'KI-Filterung fehlgeschlagen' });
+
+    const VALID_STATUS_V  = new Set(['offen','in_bearbeitung','wartet','abgeschlossen']);
+    const VALID_PRIO      = new Set([1, 2, 3]);
+    const VALID_KI_PRIO   = new Set(['hoch','mittel','niedrig']);
+    const VALID_STATUS_D  = new Set(['offen','erledigt']);
+    const dateRe          = /^\d{4}-\d{2}-\d{2}$/;
+    const today           = new Date().toISOString().split('T')[0];
+
+    const results = { vorgaenge: [], emails: [], delegationen: [], todos: [], erklaerung: filter.erklaerung || '' };
+    const tabellen = Array.isArray(filter.tabellen) ? filter.tabellen : [];
+
+    if (tabellen.includes('vorgaenge') && filter.vorgaenge) {
+      const f = filter.vorgaenge;
+      const where = [], params = [];
+
+      if (Array.isArray(f.status) && f.status.length) {
+        const valid = f.status.filter(s => VALID_STATUS_V.has(s));
+        if (valid.length) { where.push(`v.status IN (${valid.map(() => '?').join(',')})`); params.push(...valid); }
+      } else {
+        where.push(`v.status != 'abgeschlossen'`);
+      }
+      if (Array.isArray(f.prioritaet) && f.prioritaet.length) {
+        const valid = f.prioritaet.filter(p => VALID_PRIO.has(+p)).map(Number);
+        if (valid.length) { where.push(`v.prioritaet IN (${valid.map(() => '?').join(',')})`); params.push(...valid); }
+      }
+      if (f.deadline_vor && dateRe.test(f.deadline_vor))  { where.push(`v.deadline <= ?`); params.push(f.deadline_vor); }
+      if (f.deadline_nach && dateRe.test(f.deadline_nach)) { where.push(`v.deadline >= ?`); params.push(f.deadline_nach); }
+      if (f.schlagwort && typeof f.schlagwort === 'string') {
+        where.push(`(v.titel LIKE ? OR v.beschreibung LIKE ?)`);
+        params.push(`%${f.schlagwort}%`, `%${f.schlagwort}%`);
+      }
+      if (f.wiedervorlage_faellig) {
+        where.push(`v.wiedervorlage_am IS NOT NULL AND v.wiedervorlage_am <= ?`); params.push(today);
+      }
+      if (f.hat_offene_delegationen) {
+        where.push(`(SELECT COUNT(*) FROM delegationen d WHERE d.vorgang_id = v.id AND d.status = 'offen') > 0`);
+      }
+      if (f.keine_aktivitaet_seit_tagen && Number.isFinite(+f.keine_aktivitaet_seit_tagen)) {
+        where.push(`((SELECT MAX(e.created_at) FROM vorgang_eintraege e WHERE e.vorgang_id = v.id) < DATE_SUB(NOW(), INTERVAL ? DAY) OR NOT EXISTS (SELECT 1 FROM vorgang_eintraege e WHERE e.vorgang_id = v.id))`);
+        params.push(+f.keine_aktivitaet_seit_tagen);
+      }
+
+      const whereStr = where.length ? `WHERE ${where.join(' AND ')}` : '';
+      results.vorgaenge = await query(
+        `SELECT v.id, v.titel, v.status, v.prioritaet, v.deadline FROM vorgaenge v ${whereStr} ORDER BY v.prioritaet ASC, v.deadline ASC LIMIT 15`,
+        params
+      );
+    }
+
+    if (tabellen.includes('emails') && filter.emails) {
+      const f = filter.emails;
+      const where = [], params = [];
+
+      if (f.erledigt === 0 || f.erledigt === 1) { where.push(`e.erledigt = ?`); params.push(f.erledigt); }
+      if (f.ki_prioritaet && VALID_KI_PRIO.has(f.ki_prioritaet)) {
+        where.push(`e.ki_einordnung LIKE ?`); params.push(`%"ki_prioritaet":"${f.ki_prioritaet}"%`);
+      }
+      if (f.schlagwort && typeof f.schlagwort === 'string') {
+        where.push(`(e.subject LIKE ? OR e.body_text LIKE ?)`);
+        params.push(`%${f.schlagwort}%`, `%${f.schlagwort}%`);
+      }
+      if (f.von_name && typeof f.von_name === 'string') {
+        where.push(`(e.from_name LIKE ? OR e.from_email LIKE ?)`);
+        params.push(`%${f.von_name}%`, `%${f.von_name}%`);
+      }
+      if (f.datum_vor && dateRe.test(f.datum_vor))  { where.push(`e.date <= ?`); params.push(f.datum_vor); }
+      if (f.datum_nach && dateRe.test(f.datum_nach)) { where.push(`e.date >= ?`); params.push(f.datum_nach); }
+
+      const whereStr = where.length ? `WHERE ${where.join(' AND ')}` : '';
+      results.emails = await query(
+        `SELECT e.id, e.subject, e.from_name, e.from_email, e.date, e.vorgang_id, v.titel as vorgang_titel
+         FROM emails e LEFT JOIN vorgaenge v ON v.id = e.vorgang_id
+         ${whereStr} ORDER BY e.date DESC LIMIT 15`,
+        params
+      );
+    }
+
+    if (tabellen.includes('delegationen') && filter.delegationen) {
+      const f = filter.delegationen;
+      const where = [], params = [];
+
+      if (f.status && VALID_STATUS_D.has(f.status)) { where.push(`d.status = ?`); params.push(f.status); }
+      if (f.ueberfaellig) { where.push(`d.deadline < ?`); params.push(today); }
+      if (f.an_name && typeof f.an_name === 'string') { where.push(`d.an_name LIKE ?`); params.push(`%${f.an_name}%`); }
+      if (f.deadline_vor && dateRe.test(f.deadline_vor)) { where.push(`d.deadline <= ?`); params.push(f.deadline_vor); }
+
+      const whereStr = where.length ? `WHERE ${where.join(' AND ')}` : '';
+      results.delegationen = await query(
+        `SELECT d.id, d.aufgabe, d.an_name, d.deadline, d.status, v.titel as vorgang_titel, v.id as vorgang_id
+         FROM delegationen d JOIN vorgaenge v ON v.id = d.vorgang_id
+         ${whereStr} ORDER BY d.deadline ASC LIMIT 15`,
+        params
+      );
+    }
+
+    if (tabellen.includes('todos') && filter.todos) {
+      const f = filter.todos;
+      const where = [], params = [];
+
+      if (f.erledigt === 0 || f.erledigt === 1) { where.push(`t.erledigt = ?`); params.push(f.erledigt); }
+      if (f.wichtig  === 0 || f.wichtig  === 1) { where.push(`t.wichtig = ?`);  params.push(f.wichtig); }
+      if (f.dringend === 0 || f.dringend === 1) { where.push(`t.dringend = ?`); params.push(f.dringend); }
+      if (f.faellig_vor  && dateRe.test(f.faellig_vor))  { where.push(`t.faellig_am <= ?`); params.push(f.faellig_vor); }
+      if (f.faellig_nach && dateRe.test(f.faellig_nach)) { where.push(`t.faellig_am >= ?`); params.push(f.faellig_nach); }
+
+      const whereStr = where.length ? `WHERE ${where.join(' AND ')}` : '';
+      results.todos = await query(
+        `SELECT t.id, t.titel, t.wichtig, t.dringend, t.faellig_am, v.titel as vorgang_titel, v.id as vorgang_id
+         FROM todos t JOIN vorgaenge v ON v.id = t.vorgang_id
+         ${whereStr} ORDER BY t.wichtig DESC, t.dringend DESC, t.faellig_am ASC LIMIT 15`,
+        params
+      );
+    }
+
+    res.json(results);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

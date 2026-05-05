@@ -93,6 +93,9 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
 .search-item-title{font-size:12px;color:#ddd;font-family:'IBM Plex Sans',sans-serif}
 .search-item-meta{font-size:10px;color:#666;font-family:'IBM Plex Mono',monospace;margin-top:2px}
 .search-empty{padding:16px 14px;font-size:11px;color:#666;font-family:'IBM Plex Mono',monospace;text-align:center}
+.search-ki-bar{display:flex;align-items:center;gap:8px;padding:6px 14px;border-bottom:1px solid #2a2a2a;background:#1a1a2e}
+.search-ki-badge{font-size:9px;font-family:'IBM Plex Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:#7c83fd;border:1px solid #7c83fd44;border-radius:3px;padding:1px 5px}
+.search-ki-erklaerung{font-size:10px;color:#888;font-family:'IBM Plex Sans',sans-serif;font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* SIDEBAR */
 .sidebar{background:var(--paper2);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
@@ -2785,52 +2788,73 @@ function topSearchDebounced() {
   clearTimeout(_searchTimer);
   const q = document.getElementById('top-search-input').value.trim();
   if (q.length < 2) { document.getElementById('search-dropdown').style.display='none'; return; }
-  _searchTimer = setTimeout(() => globalSearch(q), 300);
+  const isNL = q.split(/\s+/).length >= 3;
+  _searchTimer = setTimeout(() => globalSearch(q, isNL), isNL ? 600 : 300);
 }
 
-async function globalSearch(q) {
+function _renderSearchResults(r, isNL) {
+  const prio = ['','🔴','🟡','🟢'];
+  const q1 = v => v.wichtig && v.dringend ? 'Sofort' : v.wichtig ? 'Planen' : v.dringend ? 'Delegieren' : 'Eliminieren';
+  let html = '';
+  if (isNL && r.erklaerung) {
+    html += `<div class="search-ki-bar"><span class="search-ki-badge">KI-Suche</span><span class="search-ki-erklaerung">${esc(r.erklaerung)}</span></div>`;
+  }
+  if (r.vorgaenge && r.vorgaenge.length) {
+    html += '<div class="search-section"><div class="search-section-label">Vorgänge</div>';
+    r.vorgaenge.slice(0, 8).forEach(v => {
+      html += `<div class="search-item" onclick="searchNav('vorgang',${v.id})">
+        <div class="search-item-title">${prio[v.prioritaet]||''} ${esc(v.titel)}</div>
+        <div class="search-item-meta">${v.status}${v.deadline?' · '+fmtDate(v.deadline):''}</div>
+      </div>`;
+    });
+    html += '</div>';
+  }
+  if (r.emails && r.emails.length) {
+    html += '<div class="search-section"><div class="search-section-label">E-Mails</div>';
+    r.emails.slice(0, 5).forEach(e => {
+      html += `<div class="search-item" onclick="searchNav('email',${e.id})">
+        <div class="search-item-title">${esc(e.subject||'(kein Betreff)')}</div>
+        <div class="search-item-meta">${esc(e.from_name||e.from_email||'')}${e.date?' · '+fmtDate(e.date):''}${e.vorgang_titel?' · '+esc(e.vorgang_titel):''}</div>
+      </div>`;
+    });
+    html += '</div>';
+  }
+  if (r.delegationen && r.delegationen.length) {
+    html += '<div class="search-section"><div class="search-section-label">Delegationen</div>';
+    r.delegationen.slice(0, 5).forEach(d => {
+      html += `<div class="search-item" onclick="searchNav('vorgang',${d.vorgang_id})">
+        <div class="search-item-title">${esc(d.aufgabe)}</div>
+        <div class="search-item-meta">${esc(d.an_name)} · ${esc(d.vorgang_titel)}${d.deadline?' · bis '+fmtDate(d.deadline):''}</div>
+      </div>`;
+    });
+    html += '</div>';
+  }
+  if (r.todos && r.todos.length) {
+    html += '<div class="search-section"><div class="search-section-label">Todos</div>';
+    r.todos.slice(0, 5).forEach(t => {
+      html += `<div class="search-item" onclick="searchNav('vorgang',${t.vorgang_id})">
+        <div class="search-item-title">${esc(t.titel)}</div>
+        <div class="search-item-meta">${q1(t)} · ${esc(t.vorgang_titel)}${t.faellig_am?' · bis '+fmtDate(t.faellig_am):''}</div>
+      </div>`;
+    });
+    html += '</div>';
+  }
+  return html;
+}
+
+async function globalSearch(q, isNL = false) {
   const dd = document.getElementById('search-dropdown');
   dd.style.display = 'block';
-  dd.innerHTML = '<div class="search-empty">Suche…</div>';
+  dd.innerHTML = `<div class="search-empty">${isNL ? 'KI analysiert…' : 'Suche…'}</div>`;
   try {
-    const r = await req('GET', '/search?q=' + encodeURIComponent(q));
-    if (!r.vorgaenge.length && !r.emails.length && !r.delegationen.length) {
+    const endpoint = isNL ? '/search/ai' : '/search';
+    const r = await req('GET', endpoint + '?q=' + encodeURIComponent(q));
+    const hasResults = (r.vorgaenge?.length || r.emails?.length || r.delegationen?.length || r.todos?.length);
+    if (!hasResults) {
       dd.innerHTML = '<div class="search-empty">Keine Treffer</div>';
       return;
     }
-    let html = '';
-    const prio = ['','🔴','🟡','🟢'];
-    if (r.vorgaenge.length) {
-      html += '<div class="search-section"><div class="search-section-label">Vorgänge</div>';
-      r.vorgaenge.slice(0,5).forEach(v => {
-        html += `<div class="search-item" onclick="searchNav('vorgang',${v.id})">
-          <div class="search-item-title">${prio[v.prioritaet]||''} ${esc(v.titel)}</div>
-          <div class="search-item-meta">${v.status}${v.deadline?' · '+fmtDate(v.deadline):''}</div>
-        </div>`;
-      });
-      html += '</div>';
-    }
-    if (r.emails.length) {
-      html += '<div class="search-section"><div class="search-section-label">E-Mails</div>';
-      r.emails.slice(0,5).forEach(e => {
-        html += `<div class="search-item" onclick="searchNav('email',${e.id})">
-          <div class="search-item-title">${esc(e.subject||'(kein Betreff)')}</div>
-          <div class="search-item-meta">${esc(e.from_name||e.from_email||'')}${e.date?' · '+fmtDate(e.date):''}${e.vorgang_titel?' · '+esc(e.vorgang_titel):''}</div>
-        </div>`;
-      });
-      html += '</div>';
-    }
-    if (r.delegationen.length) {
-      html += '<div class="search-section"><div class="search-section-label">Delegationen</div>';
-      r.delegationen.slice(0,5).forEach(d => {
-        html += `<div class="search-item" onclick="searchNav('vorgang',${d.vorgang_id})">
-          <div class="search-item-title">${esc(d.aufgabe)}</div>
-          <div class="search-item-meta">${esc(d.an_name)} · ${esc(d.vorgang_titel)}${d.deadline?' · bis '+fmtDate(d.deadline):''}</div>
-        </div>`;
-      });
-      html += '</div>';
-    }
-    dd.innerHTML = html;
+    dd.innerHTML = _renderSearchResults(r, isNL);
   } catch(e) { dd.innerHTML = '<div class="search-empty">Fehler: ' + esc(e.message) + '</div>'; }
 }
 

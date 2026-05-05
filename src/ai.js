@@ -696,6 +696,66 @@ export async function executeAction(action) {
   }
 }
 
+// ── Natürlichsprachliche Suche ────────────────────────────────────────────────
+
+export async function naturalSearchQuery(q) {
+  const today = new Date().toISOString().split('T')[0];
+
+  const prompt = `Du bist ein Datenbankassistent für "Conspectus", eine App für Schulleiter.
+Übersetze die Suchanfrage in strukturierte JSON-Filter. Heute: ${today}.
+
+Verfügbare Filter:
+
+vorgaenge:
+  status: string[] aus ["offen","in_bearbeitung","wartet","abgeschlossen"] (Standard: alles außer abgeschlossen)
+  prioritaet: number[] aus [1,2,3] (1=hoch, 2=mittel, 3=niedrig)
+  deadline_vor: "YYYY-MM-DD"
+  deadline_nach: "YYYY-MM-DD"
+  schlagwort: string (Freitext in Titel/Beschreibung)
+  wiedervorlage_faellig: true
+  hat_offene_delegationen: true
+  keine_aktivitaet_seit_tagen: number
+
+emails:
+  erledigt: 0 oder 1
+  ki_prioritaet: "hoch" | "mittel" | "niedrig"
+  schlagwort: string (in Betreff/Body)
+  von_name: string (Absender enthält)
+  datum_vor: "YYYY-MM-DD"
+  datum_nach: "YYYY-MM-DD"
+
+delegationen:
+  status: "offen" | "erledigt"
+  ueberfaellig: true
+  an_name: string (Empfänger enthält)
+  deadline_vor: "YYYY-MM-DD"
+
+todos:
+  erledigt: 0 oder 1
+  faellig_vor: "YYYY-MM-DD"
+  faellig_nach: "YYYY-MM-DD"
+  wichtig: 0 oder 1
+  dringend: 0 oder 1
+
+Gib NUR valides JSON zurück, kein Markdown:
+{"tabellen":["vorgaenge"],"vorgaenge":{},"emails":{},"delegationen":{},"todos":{},"erklaerung":"kurze deutsche Beschreibung was gesucht wird"}
+
+Suchanfrage: "${q.replace(/"/g, '\\"')}"`;
+
+  const response = await client.messages.create({
+    model: MODEL_FAST,
+    max_tokens: 400,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  try {
+    const text = response.content[0].text.trim().replace(/^```json|^```|```$/g, '').trim();
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
 export async function getTokenStats() {
   const heute = new Date().toISOString().slice(0, 10);
   const rows = await query(
