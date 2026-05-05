@@ -1364,10 +1364,12 @@ async function loadEmails() {
 let activeEmailId = null;
 let activeEmailVorgangId = null;
 let _todoFromEmail = false;
+let _emailFromView = 'dash';
 
 async function openEmail(id, fromView) {
   activeEmailId = id;
-  document.getElementById('email-back-btn').onclick = () => showView(fromView || 'dash');
+  _emailFromView = fromView || 'dash';
+  document.getElementById('email-back-btn').onclick = () => showView(_emailFromView);
   showView('email');
 
   // Reset
@@ -1480,7 +1482,7 @@ async function archivieren() {
     await req('POST', `/emails/${activeEmailId}/archivieren`);
     toast('Archiviert ✓', 'ok');
     loadStats(); loadEmails();
-    showView('dash');
+    showView(_emailFromView);
   } catch(e) { toast('Fehler: ' + e.message, 'err'); }
 }
 
@@ -1489,7 +1491,7 @@ async function emailErledigen() {
     await req('POST', `/emails/${activeEmailId}/erledigt`);
     toast('Als erledigt markiert und in IMAP verschoben ✓', 'ok');
     loadStats(); loadEmails();
-    showView('dash');
+    showView(_emailFromView);
   } catch(e) { toast('Fehler: ' + e.message, 'err'); }
 }
 
