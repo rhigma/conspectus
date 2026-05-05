@@ -316,6 +316,7 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
 .eml-main{flex:1;min-width:0}
 .eml-from{font-size:12px;font-weight:500;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .eml-subj{font-size:12px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.eml-summary{font-size:11px;color:var(--ink3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;font-style:italic}
 .eml-side{text-align:right;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:3px}
 .eml-vtag{font-size:9px;padding:2px 8px;border-radius:10px;background:var(--bluel);color:var(--blue);font-family:'IBM Plex Mono',monospace;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .eml-vtag.unzug{background:var(--paper3);color:var(--ink3)}
@@ -2753,6 +2754,7 @@ function renderEmailsView() {
       <div class="eml-main">
         <div class="eml-from">${esc(e.from_name||e.from_email||'?')}</div>
         <div class="eml-subj">${esc(e.subject||'(kein Betreff)')}</div>
+        ${ki?.zusammenfassung ? `<div class="eml-summary">${esc(ki.zusammenfassung)}</div>` : ''}
       </div>
       <div class="eml-side">
         ${e.erledigt
