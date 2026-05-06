@@ -104,6 +104,8 @@ export async function initSchema() {
   // Migration für bestehende Instanzen
   await db.execute(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS erledigt TINYINT NOT NULL DEFAULT 0`);
   await db.execute(`ALTER TABLE vorgaenge ADD COLUMN IF NOT EXISTS wiedervorlage_am DATE`);
+  await db.execute(`ALTER TABLE vorgaenge ADD COLUMN IF NOT EXISTS imap_folder VARCHAR(500)`);
+  await db.execute(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS imap_mailbox VARCHAR(500) NOT NULL DEFAULT 'INBOX'`);
 
   await db.execute(`
     CREATE TABLE IF NOT EXISTS vorgang_eintraege (

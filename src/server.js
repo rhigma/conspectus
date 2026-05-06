@@ -6,7 +6,7 @@ import cron from 'node-cron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { initSchema, query, queryOne } from './db.js';
-import { syncAllAccounts, moveToErledigt, syncErledigtStatus } from './imap.js';
+import { syncAllAccounts, moveToErledigt, syncErledigtStatus, vorgangFolderPath, renameVorgangFolderOnAllAccounts } from './imap.js';
 import { chat, executeAction, getTokenStats, emailEinordnen, notizAnalysieren, morgenbriefing, naturalSearchQuery } from './ai.js';
 import { ncMkdir, neueRemarkableNotizen, remarkableVerarbeitet, ncDownload, vorgangOrdner } from './nextcloud.js';
 import { createCalDavEvent, deleteCalDavEvent } from './caldav.js';
@@ -95,10 +95,17 @@ app.post('/vorgaenge/:id/eintraege', async (req, res) => {
 app.put('/vorgaenge/:id', async (req, res) => {
   try {
     const { titel, typ, status, prioritaet, deadline, beschreibung } = req.body;
+    const current = await queryOne('SELECT titel, imap_folder FROM vorgaenge WHERE id = ?', [req.params.id]);
     await query(
       'UPDATE vorgaenge SET titel=?, typ=?, status=?, prioritaet=?, deadline=?, beschreibung=? WHERE id=?',
       [titel, typ, status, prioritaet, deadline || null, beschreibung || null, req.params.id]
     );
+    if (current?.imap_folder && titel && titel !== current.titel) {
+      const newFolderPath = vorgangFolderPath(titel);
+      await query('UPDATE vorgaenge SET imap_folder = ? WHERE id = ?', [newFolderPath, req.params.id]);
+      renameVorgangFolderOnAllAccounts(current.imap_folder, newFolderPath)
+        .catch(e => console.warn('[IMAP] Ordner-Umbenennung fehlgeschlagen:', e.message));
+    }
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -107,12 +114,30 @@ app.patch('/vorgaenge/:id', async (req, res) => {
   try {
     const allowed = ['titel', 'typ', 'status', 'prioritaet', 'deadline', 'beschreibung', 'wiedervorlage_am'];
     const updates = [], params = [];
+
+    // Für Titel-Änderung: IMAP-Ordner ggf. umbenennen
+    let oldImapFolder = null;
+    if ('titel' in req.body && req.body.titel) {
+      const current = await queryOne('SELECT titel, imap_folder FROM vorgaenge WHERE id = ?', [req.params.id]);
+      if (current?.imap_folder && req.body.titel !== current.titel) {
+        oldImapFolder = current.imap_folder;
+      }
+    }
+
     for (const key of allowed) {
       if (key in req.body) { updates.push(`${key} = ?`); params.push(req.body[key] ?? null); }
     }
     if (!updates.length) return res.json({ ok: true });
     params.push(req.params.id);
     await query(`UPDATE vorgaenge SET ${updates.join(', ')} WHERE id = ?`, params);
+
+    if (oldImapFolder) {
+      const newFolderPath = vorgangFolderPath(req.body.titel);
+      await query('UPDATE vorgaenge SET imap_folder = ? WHERE id = ?', [newFolderPath, req.params.id]);
+      renameVorgangFolderOnAllAccounts(oldImapFolder, newFolderPath)
+        .catch(e => console.warn('[IMAP] Ordner-Umbenennung fehlgeschlagen:', e.message));
+    }
+
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -694,13 +719,17 @@ app.post('/emails/:id/erledigt', async (req, res) => {
     `, [req.params.id]);
     if (!email) return res.status(404).json({ error: 'Nicht gefunden' });
 
-    await query('UPDATE emails SET erledigt = 1, unread = 0 WHERE id = ?', [req.params.id]);
-
-    // In IMAP-Ordner "Erledigt" verschieben
-    try {
-      await moveToErledigt(email, email.uid);
-    } catch (imapErr) {
-      console.warn('[Erledigt] IMAP-Verschiebung fehlgeschlagen:', imapErr.message);
+    if (email.vorgang_id) {
+      // E-Mail gehört zu einem Vorgang → im Vorgang-Ordner belassen, nur als erledigt markieren
+      await query('UPDATE emails SET erledigt = 1, unread = 0 WHERE id = ?', [req.params.id]);
+    } else {
+      // Keine Vorgang-Zuordnung → in IMAP-Ordner "Erledigt" verschieben
+      await query('UPDATE emails SET erledigt = 1, unread = 0, imap_mailbox = ? WHERE id = ?', ['Erledigt', req.params.id]);
+      try {
+        await moveToErledigt(email, email.uid, email.imap_mailbox || 'INBOX');
+      } catch (imapErr) {
+        console.warn('[Erledigt] IMAP-Verschiebung fehlgeschlagen:', imapErr.message);
+      }
     }
 
     res.json({ ok: true });

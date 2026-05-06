@@ -1,7 +1,7 @@
 ﻿import Anthropic from '@anthropic-ai/sdk';
 import { randomUUID } from 'crypto';
 import { query, queryOne } from './db.js';
-import { getEmailContext, moveToErledigt } from './imap.js';
+import { getEmailContext, moveToErledigt, moveToVorgangFolder, vorgangFolderPath } from './imap.js';
 import { vorgangOrdner, taskAnlegen } from './nextcloud.js';
 import { createCalDavEvent, deleteCalDavEvent } from './caldav.js';
 import { sendReply } from './smtp.js';
@@ -457,9 +457,29 @@ export async function executeAction(action) {
 
     case 'email_zuordnen': {
       await query('UPDATE emails SET vorgang_id = ? WHERE id = ?', [action.vorgang_id, action.email_id]);
-      // Chronologie-Eintrag
-      const email = await queryOne('SELECT * FROM emails WHERE id = ?', [action.email_id]);
+      const email = await queryOne(
+        'SELECT e.*, a.host, a.port, a.username, a.password, a.tls FROM emails e JOIN email_accounts a ON a.id = e.account_id WHERE e.id = ?',
+        [action.email_id]
+      );
       if (email) {
+        // In IMAP-Vorgang-Ordner verschieben
+        const vorgang = await queryOne('SELECT id, titel, imap_folder FROM vorgaenge WHERE id = ?', [action.vorgang_id]);
+        if (vorgang) {
+          let folderPath = vorgang.imap_folder;
+          if (!folderPath) {
+            folderPath = vorgangFolderPath(vorgang.titel);
+            await query('UPDATE vorgaenge SET imap_folder = ? WHERE id = ?', [folderPath, vorgang.id]);
+          }
+          try {
+            const newUid = await moveToVorgangFolder(email, email.imap_mailbox || 'INBOX', email.uid, folderPath);
+            if (newUid) {
+              await query('UPDATE emails SET uid = ?, imap_mailbox = ? WHERE id = ?', [newUid, folderPath, email.id]);
+            }
+          } catch (e) {
+            console.warn('[IMAP] Zuordnungs-Verschiebung fehlgeschlagen:', e.message);
+          }
+        }
+        // Chronologie-Eintrag
         await query(
           'INSERT INTO vorgang_eintraege (vorgang_id, typ, titel, inhalt, ref_id) VALUES (?,?,?,?,?)',
           [action.vorgang_id, 'email', email.subject, email.body_text, action.email_id]
@@ -647,8 +667,12 @@ export async function executeAction(action) {
         [action.email_id]
       );
       if (!email) return { error: 'email_nicht_gefunden', id: action.email_id };
-      await query('UPDATE emails SET erledigt = 1, unread = 0 WHERE id = ?', [action.email_id]);
-      await moveToErledigt(email, email.uid).catch(() => {});
+      if (email.vorgang_id) {
+        await query('UPDATE emails SET erledigt = 1, unread = 0 WHERE id = ?', [action.email_id]);
+      } else {
+        await query('UPDATE emails SET erledigt = 1, unread = 0, imap_mailbox = ? WHERE id = ?', ['Erledigt', action.email_id]);
+        await moveToErledigt(email, email.uid, email.imap_mailbox || 'INBOX').catch(() => {});
+      }
       return { done: 'email_erledigt', id: action.email_id };
     }
 
