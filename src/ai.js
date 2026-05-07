@@ -321,8 +321,9 @@ export async function notizAnalysieren(imageBase64, mediaType = 'image/jpeg') {
 
       wfs(tmpPdf, Buffer.from(imageBase64, 'base64'));
 
-      // Alle Seiten als PNG exportieren (150 DPI)
-      spawnSync('pdftoppm', ['-r', '150', '-png', tmpPdf, tmpBase]);
+      // Alle Seiten als PNG exportieren – längere Kante auf 1800 px
+      // (Claude Vision-Limit bei Multi-Image-Requests: 2000 px je Kante)
+      spawnSync('pdftoppm', ['-scale-to', '1800', '-png', tmpPdf, tmpBase]);
 
       const tmpDir = dirname(tmpBase);
       const tmpPrefix = basename(tmpBase);
