@@ -1316,63 +1316,95 @@ if (!global._pushCronStarted) {
 }
 
 // ── KALENDER DISCOVERY ────────────────────────────────────────────────────────
+async function discoverCalendarsAt(rootUrl, username, password) {
+  const auth = 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64');
+  const { default: fetch } = await import('node-fetch');
+
+  const body = `<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav" xmlns:cs="http://calendarserver.org/ns/">
+    <d:prop>
+      <d:displayname/>
+      <d:resourcetype/>
+      <cs:getctag/>
+      <c:supported-calendar-component-set/>
+    </d:prop>
+  </d:propfind>`;
+
+  const r = await fetch(rootUrl, {
+    method: 'PROPFIND',
+    headers: { Authorization: auth, Depth: '1', 'Content-Type': 'application/xml' },
+    body,
+  });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const xml = await r.text();
+
+  const responses = [...xml.matchAll(/<d:response>([\s\S]*?)<\/d:response>/g)];
+  const calendars = [];
+  const rootPath = new URL(rootUrl).pathname.replace(/\/$/, '');
+  const techFolders = ['inbox', 'outbox', 'trashbin'];
+
+  for (const [, block] of responses) {
+    const href = block.match(/<d:href>([^<]+)<\/d:href>/)?.[1];
+    const name = block.match(/<d:displayname>([^<]*)<\/d:displayname>/)?.[1] || '';
+    const isVEvent = block.includes('VEVENT') || !block.includes('VTODO');
+    if (!href || !name) continue;
+
+    const hrefClean = href.replace(/\/$/, '');
+    if (hrefClean === rootPath) continue;
+    const folderName = hrefClean.split('/').pop().toLowerCase();
+    if (techFolders.includes(folderName)) continue;
+
+    const calUrl = href.startsWith('http')
+      ? href
+      : `${new URL(rootUrl).origin}${href}`;
+
+    calendars.push({ name: decodeURIComponent(name), url: calUrl, href, isVEvent });
+  }
+  return calendars;
+}
+
+// Leitet die CalDAV-Root-URL aus einer Kalender-URL ab
+// (z.B. .../calendars/USER/PRIVAT/  →  .../calendars/USER/)
+function deriveCalDavRoot(calUrl) {
+  const u = new URL(calUrl);
+  const parts = u.pathname.replace(/\/$/, '').split('/');
+  parts.pop();
+  u.pathname = parts.join('/') + '/';
+  return u.toString();
+}
+
 app.post('/accounts/calendar/discover', async (req, res) => {
   try {
     const { url, username, password } = req.body;
-    const auth = 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64');
-    const { default: fetch } = await import('node-fetch');
-
-    const body = `<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav" xmlns:cs="http://calendarserver.org/ns/">
-      <d:prop>
-        <d:displayname/>
-        <d:resourcetype/>
-        <cs:getctag/>
-        <c:supported-calendar-component-set/>
-      </d:prop>
-    </d:propfind>`;
-
-    const r = await fetch(url, {
-      method: 'PROPFIND',
-      headers: { Authorization: auth, Depth: '1', 'Content-Type': 'application/xml' },
-      body,
-    });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    const xml = await r.text();
-
-    // Alle href + displayname Paare extrahieren
-    const responses = [...xml.matchAll(/<d:response>([\s\S]*?)<\/d:response>/g)];
-    const calendars = [];
-
-    for (const [, block] of responses) {
-      const href = block.match(/<d:href>([^<]+)<\/d:href>/)?.[1];
-      const name = block.match(/<d:displayname>([^<]*)<\/d:displayname>/)?.[1] || '';
-      const isCalendar = block.includes('caldav:calendar') || block.includes('c:calendar');
-      const isVEvent = block.includes('VEVENT') || !block.includes('VTODO');
-
-      if (!href || !name) continue;
-
-      // Root-Ordner überspringen
-      const rootPath = new URL(url).pathname.replace(/\/$/, '');
-      const hrefClean = href.replace(/\/$/, '');
-      if (hrefClean === rootPath) continue;
-
-      // Technische Ordner überspringen (inbox, outbox, trashbin)
-      const techFolders = ['inbox', 'outbox', 'trashbin'];
-      const folderName = hrefClean.split('/').pop().toLowerCase();
-      if (techFolders.includes(folderName)) continue;
-
-      // Vollständige URL
-      const calUrl = href.startsWith('http') ? href : `${process.env.NC_URL}${href}`;
-
-      calendars.push({
-        name: decodeURIComponent(name),
-        url: calUrl,
-        href,
-        isVEvent,
-      });
-    }
-
+    const calendars = await discoverCalendarsAt(url, username, password);
     res.json(calendars);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Erneut nach Kalendern auf demselben Pfad scannen, ohne Credentials neu eingeben zu müssen
+app.post('/accounts/calendar/rescan', async (req, res) => {
+  try {
+    const { calendar_id } = req.body;
+    const cal = await queryOne('SELECT url, username, password FROM calendars WHERE id = ?', [calendar_id]);
+    if (!cal) return res.status(404).json({ error: 'Kalender nicht gefunden' });
+    const rootUrl = deriveCalDavRoot(cal.url);
+    const calendars = await discoverCalendarsAt(rootUrl, cal.username, cal.password);
+    res.json({ root_url: rootUrl, calendars });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Neuen Kalender mit den Credentials eines bestehenden anlegen (Re-Scan-Workflow)
+app.post('/accounts/calendar/from-existing', async (req, res) => {
+  try {
+    const { source_id, label, url, color } = req.body;
+    const src = await queryOne('SELECT username, password FROM calendars WHERE id = ?', [source_id]);
+    if (!src) return res.status(404).json({ error: 'Quell-Kalender nicht gefunden' });
+    const { testCalDav } = await import('./caldav.js');
+    await testCalDav(url, src.username, src.password);
+    const result = await query(
+      'INSERT INTO calendars (label, url, username, password, color) VALUES (?,?,?,?,?)',
+      [label, url, src.username, src.password, color || '#8fb87a']
+    );
+    res.json({ id: result.insertId });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

@@ -2246,6 +2246,7 @@ async function loadSettingsCals() {
           <div style="font-size:12px;color:var(--ink)">${esc(c.label)}</div>
           <div style="font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(c.url)}</div>
         </div>
+        <button onclick="rescanKalender(${c.id})" title="Auf demselben Pfad nach weiteren Kalendern suchen" style="font-size:10px;color:var(--ink2);background:none;border:none;cursor:pointer;font-family:'IBM Plex Mono',monospace">↻ Rescan</button>
         <button onclick="deleteCal(${c.id},'${esc(c.label)}')" style="font-size:10px;color:var(--accent);background:none;border:none;cursor:pointer;font-family:'IBM Plex Mono',monospace">Löschen</button>
       </div>`).join('');
   } catch(e) { el.innerHTML = `<span style="color:var(--accent);font-size:11px">${esc(e.message)}</span>`; }
@@ -2293,13 +2294,58 @@ async function loadSystemInfo() {
 // Kalender testen und speichern
 let selectedCalColor = '#8fb87a';
 let discoveredCals = [];
+let discoverySource = null; // null = manueller Discovery, sonst {sourceId} für Rescan
 const COLORS = ['#8fb87a','#7baed4','#d4a853','#c97070','#b07dd4','#d47d9e','#8fb7b4'];
 const SKIP_NAMES = ['inbox', 'geburtstage', 'deck', 'birthday'];
 
 function discoverKalender() {
+  discoverySource = null;
   document.getElementById('cal-discover-body').style.display = 'block';
   document.getElementById('cal-discover-results').style.display = 'none';
   document.getElementById('m-cal-discover').style.display = 'flex';
+}
+
+async function rescanKalender(sourceId) {
+  discoverySource = { sourceId };
+  document.getElementById('cal-discover-body').style.display = 'none';
+  document.getElementById('cal-discover-results').style.display = 'block';
+  document.getElementById('cal-discover-list').innerHTML =
+    '<div style="padding:16px 0;color:var(--ink3);font-size:12px;font-family:\'IBM Plex Mono\',monospace">Suche auf demselben Pfad…</div>';
+  document.getElementById('m-cal-discover').style.display = 'flex';
+  try {
+    const r = await req('POST', '/accounts/calendar/rescan', { calendar_id: sourceId });
+    renderDiscoveredCals(r.calendars || []);
+  } catch(e) {
+    document.getElementById('cal-discover-list').innerHTML =
+      `<div style="padding:16px 0;color:var(--accent);font-size:12px">Fehler: ${esc(e.message)}</div>`;
+  }
+}
+
+async function renderDiscoveredCals(cals) {
+  discoveredCals = cals;
+  const existing = await req('GET', '/accounts/calendar');
+  const existingUrls = new Set(existing.map(c => c.url));
+
+  document.getElementById('cal-discover-list').innerHTML = cals.map((c, i) => {
+    const alreadyAdded = existingUrls.has(c.url);
+    const skip = SKIP_NAMES.some(s => c.name.toLowerCase().includes(s));
+    const color = COLORS[i % COLORS.length];
+    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--paper2)">
+      <input type="checkbox" id="cal-cb-${i}" value="${i}"
+        ${alreadyAdded ? 'disabled checked' : (!skip ? 'checked' : '')}
+        style="width:16px;height:16px;accent-color:var(--accent);flex-shrink:0"/>
+      <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0"></div>
+      <div style="flex:1">
+        <div style="font-size:12px;color:var(--ink);font-weight:${alreadyAdded?'400':'500'}">${esc(c.name)}
+          ${alreadyAdded ? '<span style="font-size:10px;color:var(--green);font-family:\'IBM Plex Mono\',monospace;font-weight:400"> · bereits eingebunden</span>' : ''}
+        </div>
+        <div style="font-size:10px;color:var(--ink3);font-family:\'IBM Plex Mono\',monospace;margin-top:1px">${esc(c.url.split('/').slice(-2,-1)[0] || c.url)}</div>
+      </div>
+      <div style="width:14px;height:14px;border-radius:50%;background:${color};cursor:pointer;border:2px solid transparent;flex-shrink:0"
+        onclick="this.style.background=prompt('Farbe (hex):',this.style.background)||this.style.background"
+        data-idx="${i}" id="cal-color-${i}"></div>
+    </div>`;
+  }).join('') || '<div style="color:var(--ink3);font-size:12px;padding:16px 0">Keine Kalender gefunden.</div>';
 }
 
 async function startDiscovery() {
@@ -2309,33 +2355,7 @@ async function startDiscovery() {
     const cals = await req('POST', '/accounts/calendar/discover', {
       url: g('cd-url'), username: g('cd-user'), password: g('cd-pass')
     });
-    discoveredCals = cals;
-
-    // Bereits eingebundene Kalender laden
-    const existing = await req('GET', '/accounts/calendar');
-    const existingUrls = new Set(existing.map(c => c.url));
-
-    document.getElementById('cal-discover-list').innerHTML = cals.map((c, i) => {
-      const alreadyAdded = existingUrls.has(c.url);
-      const skip = SKIP_NAMES.some(s => c.name.toLowerCase().includes(s));
-      const color = COLORS[i % COLORS.length];
-      return `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--paper2)">
-        <input type="checkbox" id="cal-cb-${i}" value="${i}"
-          ${alreadyAdded ? 'disabled checked' : (!skip ? 'checked' : '')}
-          style="width:16px;height:16px;accent-color:var(--accent);flex-shrink:0"/>
-        <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0"></div>
-        <div style="flex:1">
-          <div style="font-size:12px;color:var(--ink);font-weight:${alreadyAdded?'400':'500'}">${esc(c.name)}
-            ${alreadyAdded ? '<span style="font-size:10px;color:var(--green);font-family:\'IBM Plex Mono\',monospace;font-weight:400"> · bereits eingebunden</span>' : ''}
-          </div>
-          <div style="font-size:10px;color:var(--ink3);font-family:\'IBM Plex Mono\',monospace;margin-top:1px">${esc(c.url.split('/').slice(-2,-1)[0] || c.url)}</div>
-        </div>
-        <div style="width:14px;height:14px;border-radius:50%;background:${color};cursor:pointer;border:2px solid transparent;flex-shrink:0"
-          onclick="this.style.background=prompt('Farbe (hex):',this.style.background)||this.style.background"
-          data-idx="${i}" id="cal-color-${i}"></div>
-      </div>`;
-    }).join('') || '<div style="color:var(--ink3);font-size:12px;padding:16px 0">Keine Kalender gefunden.</div>';
-
+    await renderDiscoveredCals(cals);
     document.getElementById('cal-discover-body').style.display = 'none';
     document.getElementById('cal-discover-results').style.display = 'block';
   } catch(e) {
@@ -2358,10 +2378,17 @@ async function saveSelectedCals() {
     const cal = discoveredCals[i];
     const color = document.getElementById(`cal-color-${i}`)?.style.background || COLORS[i % COLORS.length];
     try {
-      await req('POST', '/accounts/calendar', {
-        label: cal.name, url: cal.url,
-        username: user, password: pass, color
-      });
+      if (discoverySource?.sourceId) {
+        await req('POST', '/accounts/calendar/from-existing', {
+          source_id: discoverySource.sourceId,
+          label: cal.name, url: cal.url, color
+        });
+      } else {
+        await req('POST', '/accounts/calendar', {
+          label: cal.name, url: cal.url,
+          username: user, password: pass, color
+        });
+      }
       saved++;
     } catch(e) {
       console.error('Kalender speichern:', cal.name, e.message);
