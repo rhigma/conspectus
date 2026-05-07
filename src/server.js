@@ -15,7 +15,7 @@ import { randomUUID } from 'crypto';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app    = express();
 const PORT   = process.env.PORT || 3001;
-const SECRET = process.env.API_SECRET;
+let   CURRENT_SECRET = process.env.API_SECRET || '';
 
 app.use(cors({ origin: false }));
 app.use(express.json({ limit: '10mb' }));
@@ -25,7 +25,7 @@ app.use(express.static(path.join(__dirname, '../frontend')));
 app.use((req, res, next) => {
   if (req.path === '/health') return next();
   const key = req.headers['x-api-key'] || req.query.key;
-  if (SECRET && key !== SECRET) return res.status(401).json({ error: 'Unauthorized' });
+  if (CURRENT_SECRET && key !== CURRENT_SECRET) return res.status(401).json({ error: 'Unauthorized' });
   next();
 });
 
@@ -850,6 +850,13 @@ process.on('unhandledRejection', (r) => console.error('[unhandledRejection]', r)
 // ── Start ─────────────────────────────────────────────────────────────────────
 async function start() {
   await initSchema();
+  try {
+    const row = await queryOne("SELECT value FROM settings WHERE `key` = 'api_secret'");
+    if (row && row.value) {
+      CURRENT_SECRET = row.value;
+      console.log('[Auth] App-Passwort aus settings-Tabelle geladen');
+    }
+  } catch(e) { console.error('[Auth] Konnte api_secret nicht laden:', e.message); }
   await ncMkdir('/Vorgaenge').catch(() => {});
   await ncMkdir('/E-Mail-Anhänge').catch(() => {});
   await ncMkdir('/reMarkable').catch(() => {});
@@ -1076,11 +1083,16 @@ app.get('/events', async (req, res) => {
 });
 
 // ── SETTINGS ──────────────────────────────────────────────────────────────────
+const SENSITIVE_SETTINGS = new Set(['api_secret']);
+
 app.get('/settings', async (req, res) => {
   try {
     const rows = await query('SELECT * FROM settings');
     const s = {};
-    for (const r of rows) s[r.key] = r.value;
+    for (const r of rows) {
+      if (SENSITIVE_SETTINGS.has(r.key)) continue;
+      s[r.key] = r.value;
+    }
     res.json(s);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -1088,6 +1100,9 @@ app.get('/settings', async (req, res) => {
 app.put('/settings/:key', async (req, res) => {
   try {
     const key = req.params.key;
+    if (SENSITIVE_SETTINGS.has(key)) {
+      return res.status(403).json({ error: 'Dieser Schlüssel kann nicht direkt gesetzt werden.' });
+    }
     const value = req.body.value ?? null;
     if (key === 'briefing_time' && value && !/^\d{1,2}:\d{2}$/.test(value)) {
       return res.status(400).json({ error: 'Ungültiges Zeitformat (HH:MM erwartet)' });
@@ -1099,6 +1114,31 @@ app.put('/settings/:key', async (req, res) => {
     if (key === 'briefing_time') {
       await planBriefing().catch(e => console.error('[Briefing] Reschedule:', e.message));
     }
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── APP-PASSWORT ÄNDERN ───────────────────────────────────────────────────────
+app.post('/system/change-password', async (req, res) => {
+  try {
+    const { altes_passwort, neues_passwort } = req.body || {};
+    if (!altes_passwort || !neues_passwort) {
+      return res.status(400).json({ error: 'Altes und neues Passwort erforderlich.' });
+    }
+    if (altes_passwort !== CURRENT_SECRET) {
+      return res.status(401).json({ error: 'Altes Passwort stimmt nicht.' });
+    }
+    if (neues_passwort.length < 8) {
+      return res.status(400).json({ error: 'Neues Passwort muss mindestens 8 Zeichen haben.' });
+    }
+    if (neues_passwort === altes_passwort) {
+      return res.status(400).json({ error: 'Neues Passwort muss sich vom alten unterscheiden.' });
+    }
+    await query(
+      'INSERT INTO settings (`key`, value) VALUES (?,?) ON DUPLICATE KEY UPDATE value = VALUES(value)',
+      ['api_secret', neues_passwort]
+    );
+    CURRENT_SECRET = neues_passwort;
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
