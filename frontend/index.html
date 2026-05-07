@@ -252,6 +252,26 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
 .boox-chip.vorgang:hover{filter:brightness(.95)}
 .boox-chip.error{background:#fde2e2;color:#a33}
 [data-theme="dark"] .boox-chip.error{background:#5a2424;color:#f3b8b8}
+.boox-vorschlag{border:1px solid var(--border);border-radius:var(--r);padding:10px 12px;margin-bottom:8px;background:var(--paper2)}
+.boox-vorschlag.uebernommen{border-color:var(--green);background:var(--greenl)}
+.boox-vorschlag.verworfen{opacity:.5;background:var(--paper3)}
+[data-theme="dark"] .boox-vorschlag.verworfen{background:var(--paper)}
+.boox-vorschlag-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px}
+.boox-vorschlag-row:last-child{margin-bottom:0}
+.boox-vorschlag input[type=text],.boox-vorschlag input[type=date],.boox-vorschlag input[type=time]{font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:#fff;color:var(--ink);font-family:inherit}
+[data-theme="dark"] .boox-vorschlag input{background:var(--paper);color:var(--ink)}
+.boox-vorschlag input[type=text]{flex:1;min-width:140px}
+.boox-vorschlag label{font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace;display:flex;align-items:center;gap:4px}
+.boox-vorschlag-actions{display:flex;gap:6px;margin-top:8px}
+.boox-btn{font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:4px;background:#fff;color:var(--ink2);cursor:pointer;font-family:inherit}
+.boox-btn:hover{border-color:var(--accent2)}
+.boox-btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.boox-btn.primary:hover{filter:brightness(.9)}
+.boox-btn.danger{color:#a33}
+[data-theme="dark"] .boox-btn{background:var(--paper2)}
+.boox-status-badge{font-size:9px;padding:2px 7px;border-radius:20px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.06em}
+.boox-status-badge.uebernommen{background:var(--green);color:#fff}
+.boox-status-badge.verworfen{background:var(--ink3);color:#fff}
 .vorgang-aside{text-align:right;flex-shrink:0}
 .vorgang-deleg-count{font-size:11px;color:var(--accent);font-family:'IBM Plex Mono',monospace}
 .vorgang-eintrag-count{font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace}
@@ -2833,6 +2853,16 @@ async function loadBoox() {
   }
 }
 
+// Hilfsfunktion: Vorschlag normalisieren (alte Strings → Objekt)
+function normVorschlag(v, typ) {
+  if (typeof v === 'string') return { titel: v, status: 'offen', ref_id: null };
+  return { status: 'offen', ref_id: null, ...v };
+}
+
+function countOffen(arr) {
+  return (arr || []).filter(x => normVorschlag(x).status === 'offen').length;
+}
+
 function renderBoox() {
   const list = document.getElementById('boox-list');
   const cnt = document.getElementById('boox-count');
@@ -2862,24 +2892,23 @@ function renderBoox() {
     const open = _booxOpen.has(r.id);
     const fehler = ki.fehler;
     const seiten = ki.seiten;
-    const aufg = (ki.aufgaben || []).length;
-    const deleg = (ki.delegationen || []).length;
-    const term = (ki.termine || []).length;
+    const offenA = countOffen(ki.aufgaben);
+    const offenD = countOffen(ki.delegationen);
+    const offenT = countOffen(ki.termine);
+    const offenSum = offenA + offenD + offenT;
 
     const meta = [
       seiten ? `${seiten} S.` : '',
-      aufg ? `${aufg} Aufgabe${aufg!==1?'n':''}` : '',
-      deleg ? `${deleg} Delegation${deleg!==1?'en':''}` : '',
-      term ? `${term} Termin${term!==1?'e':''}` : '',
+      offenSum ? `${offenSum} offene Vorschläge` : 'alle bearbeitet',
     ].filter(Boolean).join(' · ');
 
     const detail = open ? `
       <div class="boox-detail">
         ${ki.zusammenfassung ? `<h4>Zusammenfassung</h4><div>${esc(ki.zusammenfassung)}</div>` : ''}
         ${ki.transkription ? `<h4>Transkription</h4><div class="transkr">${esc(ki.transkription)}</div>` : ''}
-        ${aufg ? `<h4>Aufgaben</h4><ul>${ki.aufgaben.map(a => `<li>${esc(a)}</li>`).join('')}</ul>` : ''}
-        ${deleg ? `<h4>Delegationen</h4><ul>${ki.delegationen.map(d => `<li><b>${esc(d.an||'?')}</b>: ${esc(d.aufgabe||'')}${d.deadline?` <span style="color:var(--ink3)">(bis ${esc(d.deadline)})</span>`:''}</li>`).join('')}</ul>` : ''}
-        ${term ? `<h4>Termine</h4><ul>${ki.termine.map(t => `<li>${esc(t.titel||'')} – ${esc(t.datum||'')}${t.uhrzeit?` ${esc(t.uhrzeit)}`:''}</li>`).join('')}</ul>` : ''}
+        ${(ki.aufgaben||[]).length ? `<h4>Aufgaben (${offenA} offen)</h4>${(ki.aufgaben||[]).map((a,i)=>renderAufgabe(r.id,i,normVorschlag(a))).join('')}` : ''}
+        ${(ki.delegationen||[]).length ? `<h4>Delegationen (${offenD} offen)</h4>${(ki.delegationen||[]).map((d,i)=>renderDelegation(r.id,i,normVorschlag(d))).join('')}` : ''}
+        ${(ki.termine||[]).length ? `<h4>Termine (${offenT} offen)</h4>${(ki.termine||[]).map((t,i)=>renderTermin(r.id,i,normVorschlag(t))).join('')}` : ''}
         ${fehler ? `<h4>Hinweis</h4><div>${esc(fehler)}</div>` : ''}
         ${r.datei_pfad ? `<h4>Quelldatei</h4><div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink3);word-break:break-all">${esc(r.datei_pfad)}</div>` : ''}
       </div>` : '';
@@ -2908,6 +2937,115 @@ function renderBoox() {
         ${detail}
       </div>`;
   }).join('');
+}
+
+function statusBadge(status) {
+  if (status === 'uebernommen') return '<span class="boox-status-badge uebernommen">✓ übernommen</span>';
+  if (status === 'verworfen') return '<span class="boox-status-badge verworfen">✕ verworfen</span>';
+  return '';
+}
+
+function vorschlagActions(eintragId, typ, index, status) {
+  if (status === 'uebernommen' || status === 'verworfen') {
+    return `<button class="boox-btn" onclick="booxReset(${eintragId},'${typ}',${index})">↺ Zurücksetzen</button>`;
+  }
+  return `
+    <button class="boox-btn primary" onclick="booxUebernehmen(${eintragId},'${typ}',${index})">✓ Übernehmen</button>
+    <button class="boox-btn danger" onclick="booxVerwerfen(${eintragId},'${typ}',${index})">✕ Verwerfen</button>
+  `;
+}
+
+function renderAufgabe(eintragId, i, a) {
+  const dis = (a.status === 'uebernommen' || a.status === 'verworfen') ? 'disabled' : '';
+  const dataAttr = `data-eintrag="${eintragId}" data-typ="aufgabe" data-index="${i}"`;
+  return `
+    <div class="boox-vorschlag ${a.status === 'uebernommen' ? 'uebernommen' : a.status === 'verworfen' ? 'verworfen' : ''}">
+      <div class="boox-vorschlag-row">
+        <input type="text" placeholder="Titel" value="${esc(a.titel||'')}" ${dis} ${dataAttr} data-feld="titel"/>
+        ${statusBadge(a.status)}
+      </div>
+      <div class="boox-vorschlag-row">
+        <label><input type="checkbox" ${a.wichtig ? 'checked' : ''} ${dis} ${dataAttr} data-feld="wichtig"/>wichtig</label>
+        <label><input type="checkbox" ${a.dringend ? 'checked' : ''} ${dis} ${dataAttr} data-feld="dringend"/>dringend</label>
+        <label>fällig <input type="date" value="${esc((a.faellig_am||'').slice(0,10))}" ${dis} ${dataAttr} data-feld="faellig_am"/></label>
+      </div>
+      <div class="boox-vorschlag-actions">${vorschlagActions(eintragId,'aufgabe',i,a.status)}</div>
+    </div>`;
+}
+
+function renderDelegation(eintragId, i, d) {
+  const dis = (d.status === 'uebernommen' || d.status === 'verworfen') ? 'disabled' : '';
+  const dataAttr = `data-eintrag="${eintragId}" data-typ="delegation" data-index="${i}"`;
+  return `
+    <div class="boox-vorschlag ${d.status === 'uebernommen' ? 'uebernommen' : d.status === 'verworfen' ? 'verworfen' : ''}">
+      <div class="boox-vorschlag-row">
+        <input type="text" placeholder="An (Name)" value="${esc(d.an||'')}" ${dis} ${dataAttr} data-feld="an" style="flex:0 0 180px"/>
+        <input type="text" placeholder="Aufgabe" value="${esc(d.aufgabe||'')}" ${dis} ${dataAttr} data-feld="aufgabe"/>
+        ${statusBadge(d.status)}
+      </div>
+      <div class="boox-vorschlag-row">
+        <label>Deadline <input type="date" value="${esc(d.deadline||'')}" ${dis} ${dataAttr} data-feld="deadline"/></label>
+      </div>
+      <div class="boox-vorschlag-actions">${vorschlagActions(eintragId,'delegation',i,d.status)}</div>
+    </div>`;
+}
+
+function renderTermin(eintragId, i, t) {
+  const dis = (t.status === 'uebernommen' || t.status === 'verworfen') ? 'disabled' : '';
+  const dataAttr = `data-eintrag="${eintragId}" data-typ="termin" data-index="${i}"`;
+  return `
+    <div class="boox-vorschlag ${t.status === 'uebernommen' ? 'uebernommen' : t.status === 'verworfen' ? 'verworfen' : ''}">
+      <div class="boox-vorschlag-row">
+        <input type="text" placeholder="Titel" value="${esc(t.titel||'')}" ${dis} ${dataAttr} data-feld="titel"/>
+        ${statusBadge(t.status)}
+      </div>
+      <div class="boox-vorschlag-row">
+        <label>Datum <input type="date" value="${esc((t.datum||'').slice(0,10))}" ${dis} ${dataAttr} data-feld="datum"/></label>
+        <label>Uhrzeit <input type="time" value="${esc(t.uhrzeit||'')}" ${dis} ${dataAttr} data-feld="uhrzeit"/></label>
+      </div>
+      <div class="boox-vorschlag-actions">${vorschlagActions(eintragId,'termin',i,t.status)}</div>
+    </div>`;
+}
+
+function readVorschlagFelder(eintragId, typ, index) {
+  const sel = `[data-eintrag="${eintragId}"][data-typ="${typ}"][data-index="${index}"]`;
+  const inputs = document.querySelectorAll(sel);
+  const daten = {};
+  inputs.forEach(el => {
+    const k = el.dataset.feld;
+    if (el.type === 'checkbox') daten[k] = el.checked ? 1 : 0;
+    else daten[k] = el.value || null;
+  });
+  return daten;
+}
+
+async function booxUebernehmen(eintragId, typ, index) {
+  const daten = readVorschlagFelder(eintragId, typ, index);
+  try {
+    await req('POST', `/boox/${eintragId}/uebernehmen`, { typ, index, daten });
+    toast('Übernommen');
+    await loadBoox();
+  } catch(e) {
+    toast('Fehler: ' + e.message, 'error');
+  }
+}
+
+async function booxVerwerfen(eintragId, typ, index) {
+  try {
+    await req('POST', `/boox/${eintragId}/verwerfen`, { typ, index });
+    await loadBoox();
+  } catch(e) {
+    toast('Fehler: ' + e.message, 'error');
+  }
+}
+
+async function booxReset(eintragId, typ, index) {
+  try {
+    await req('POST', `/boox/${eintragId}/reset`, { typ, index });
+    await loadBoox();
+  } catch(e) {
+    toast('Fehler: ' + e.message, 'error');
+  }
 }
 
 function toggleBoox(id) {

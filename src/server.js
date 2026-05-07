@@ -548,53 +548,26 @@ async function booxNotizVerarbeiten(pfad) {
     }
   }
 
-  // Chronologie-Eintrag
+  // Vorschläge normalisieren: jedes Item bekommt status="offen" und ref_id=null,
+  // damit Übernahme/Verwerfung später pro Item nachvollzogen werden kann.
+  const normItem = (extra = {}) => ({ status: 'offen', ref_id: null, ...extra });
+  analyse.aufgaben = (analyse.aufgaben || []).map(a =>
+    typeof a === 'string' ? normItem({ titel: a }) : normItem(a)
+  );
+  analyse.delegationen = (analyse.delegationen || []).map(d => normItem(d));
+  analyse.termine = (analyse.termine || []).map(t => normItem(t));
+
+  // Chronologie-Eintrag (enthält die Vorschläge — werden NICHT mehr automatisch
+  // in todos/events/delegationen übernommen; das passiert per Curation-UI).
   await query(
     'INSERT INTO vorgang_eintraege (vorgang_id, typ, titel, inhalt, datei_pfad) VALUES (?,?,?,?,?)',
     [vorgangId, 'notiz', `Boox: ${pfad.split('/').pop()}`, JSON.stringify(analyse), pfad]
   );
 
-  // Termine aus Boox-Analyse als events-Einträge anlegen
-  let terminCount = 0;
-  for (const t of analyse.termine || []) {
-    try {
-      const startDt = t.uhrzeit
-        ? new Date(`${t.datum}T${t.uhrzeit}:00`)
-        : new Date(t.datum);
-      if (isNaN(startDt.getTime())) continue;
-      const endDt = new Date(startDt.getTime() + 60 * 60 * 1000);
-      const uid = `boox-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-      await query(
-        'INSERT INTO events (vorgang_id, uid, title, start_time, end_time, all_day) VALUES (?,?,?,?,?,?)',
-        [vorgangId, uid, t.titel, startDt.toISOString(), endDt.toISOString(), t.uhrzeit ? 0 : 1]
-      );
-      terminCount++;
-    } catch (e) { console.error('[Boox] Termin-Fehler:', e.message); }
-  }
-
-  // Delegationen aus Boox-Analyse anlegen
-  let delegCount = 0;
-  for (const d of analyse.delegationen || []) {
-    try {
-      const person = await queryOne(
-        'SELECT id, rolle FROM delegations_personen WHERE name = ? AND aktiv = 1',
-        [d.an]
-      );
-      const result = await query(
-        'INSERT INTO delegationen (vorgang_id, person_id, an_name, an_rolle, aufgabe, deadline) VALUES (?,?,?,?,?,?)',
-        [vorgangId, person?.id || null, d.an, person?.rolle || 'sonstiges', d.aufgabe, d.deadline || null]
-      );
-      await query(
-        'INSERT INTO vorgang_eintraege (vorgang_id, typ, titel, inhalt, ref_id) VALUES (?,?,?,?,?)',
-        [vorgangId, 'delegation', `Delegation an ${d.an}`, d.aufgabe, result.insertId]
-      );
-      delegCount++;
-    } catch (e) { console.error('[Boox] Delegation-Fehler:', e.message); }
-  }
-
   await booxVerarbeitet(pfad);
-  console.log(`[Boox] ${pfad.split('/').pop()} → Vorgang #${vorgangId}, ${terminCount} Termine, ${delegCount} Delegationen`);
-  return { pfad, vorgangId, termine: terminCount, delegationen: delegCount, analyse };
+  const offen = analyse.aufgaben.length + analyse.delegationen.length + analyse.termine.length;
+  console.log(`[Boox] ${pfad.split('/').pop()} → Vorgang #${vorgangId}, ${offen} Vorschläge`);
+  return { pfad, vorgangId, vorschlaege: offen, analyse };
 }
 
 app.post('/boox/sync', async (req, res) => {
@@ -633,6 +606,116 @@ app.get('/boox/notizen', async (req, res) => {
       [limit]
     );
     res.json(eintraege);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Vorschlag aus Boox-Notiz übernehmen oder verwerfen.
+// Body: { typ: 'aufgabe'|'delegation'|'termin', index: N, daten?: {...} }
+async function loadBooxEintrag(eintragId) {
+  const row = await queryOne(
+    'SELECT id, vorgang_id, inhalt FROM vorgang_eintraege WHERE id = ? AND titel LIKE ?',
+    [eintragId, 'Boox:%']
+  );
+  if (!row) throw new Error('Boox-Eintrag nicht gefunden');
+  let analyse;
+  try { analyse = JSON.parse(row.inhalt); } catch { throw new Error('Boox-Eintrag: JSON kaputt'); }
+  return { row, analyse };
+}
+
+function listFor(analyse, typ) {
+  if (typ === 'aufgabe') return analyse.aufgaben || (analyse.aufgaben = []);
+  if (typ === 'delegation') return analyse.delegationen || (analyse.delegationen = []);
+  if (typ === 'termin') return analyse.termine || (analyse.termine = []);
+  throw new Error('Unbekannter typ: ' + typ);
+}
+
+app.post('/boox/:eintragId/uebernehmen', async (req, res) => {
+  try {
+    const eintragId = parseInt(req.params.eintragId);
+    const { typ, index, daten = {} } = req.body || {};
+    const { row, analyse } = await loadBooxEintrag(eintragId);
+    const items = listFor(analyse, typ);
+    const item = items[index];
+    if (!item) return res.status(404).json({ error: 'Vorschlag-Index ungültig' });
+    if (item.status === 'uebernommen') return res.status(409).json({ error: 'Bereits übernommen', ref_id: item.ref_id });
+
+    const merged = { ...item, ...daten };
+    let refId = null;
+
+    if (typ === 'aufgabe') {
+      const titel = (merged.titel || '').trim();
+      if (!titel) return res.status(400).json({ error: 'Titel fehlt' });
+      const r = await query(
+        'INSERT INTO todos (vorgang_id, titel, beschreibung, faellig_am, wichtig, dringend) VALUES (?,?,?,?,?,?)',
+        [row.vorgang_id, titel, merged.beschreibung || null, merged.faellig_am || null,
+         merged.wichtig ? 1 : 0, merged.dringend ? 1 : 0]
+      );
+      refId = r.insertId;
+    } else if (typ === 'delegation') {
+      const an = (merged.an || '').trim();
+      const aufg = (merged.aufgabe || '').trim();
+      if (!an || !aufg) return res.status(400).json({ error: 'an und aufgabe erforderlich' });
+      const person = await queryOne(
+        'SELECT id, rolle FROM delegations_personen WHERE name = ? AND aktiv = 1',
+        [an]
+      );
+      const r = await query(
+        'INSERT INTO delegationen (vorgang_id, person_id, an_name, an_rolle, aufgabe, deadline) VALUES (?,?,?,?,?,?)',
+        [row.vorgang_id, person?.id || null, an, person?.rolle || 'sonstiges', aufg, merged.deadline || null]
+      );
+      refId = r.insertId;
+      await query(
+        'INSERT INTO vorgang_eintraege (vorgang_id, typ, titel, inhalt, ref_id) VALUES (?,?,?,?,?)',
+        [row.vorgang_id, 'delegation', `Delegation an ${an}`, aufg, refId]
+      );
+    } else if (typ === 'termin') {
+      const titel = (merged.titel || '').trim();
+      if (!titel) return res.status(400).json({ error: 'Titel fehlt' });
+      const datum = merged.datum;
+      if (!datum) return res.status(400).json({ error: 'Datum fehlt' });
+      const startDt = merged.uhrzeit
+        ? new Date(`${datum}T${merged.uhrzeit}:00`)
+        : new Date(datum);
+      if (isNaN(startDt.getTime())) return res.status(400).json({ error: 'Datum/Uhrzeit ungültig' });
+      const endDt = new Date(startDt.getTime() + 60 * 60 * 1000);
+      const uid = `boox-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const r = await query(
+        'INSERT INTO events (vorgang_id, uid, title, start_time, end_time, all_day) VALUES (?,?,?,?,?,?)',
+        [row.vorgang_id, uid, titel, startDt.toISOString(), endDt.toISOString(), merged.uhrzeit ? 0 : 1]
+      );
+      refId = r.insertId;
+    }
+
+    items[index] = { ...merged, status: 'uebernommen', ref_id: refId };
+    await query('UPDATE vorgang_eintraege SET inhalt = ? WHERE id = ?', [JSON.stringify(analyse), eintragId]);
+    res.json({ ok: true, ref_id: refId });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/boox/:eintragId/verwerfen', async (req, res) => {
+  try {
+    const eintragId = parseInt(req.params.eintragId);
+    const { typ, index } = req.body || {};
+    const { analyse } = await loadBooxEintrag(eintragId);
+    const items = listFor(analyse, typ);
+    if (!items[index]) return res.status(404).json({ error: 'Vorschlag-Index ungültig' });
+    items[index] = { ...items[index], status: 'verworfen' };
+    await query('UPDATE vorgang_eintraege SET inhalt = ? WHERE id = ?', [JSON.stringify(analyse), eintragId]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Status zurücksetzen (z.B. bei Fehlbedienung)
+app.post('/boox/:eintragId/reset', async (req, res) => {
+  try {
+    const eintragId = parseInt(req.params.eintragId);
+    const { typ, index } = req.body || {};
+    const { analyse } = await loadBooxEintrag(eintragId);
+    const items = listFor(analyse, typ);
+    if (!items[index]) return res.status(404).json({ error: 'Vorschlag-Index ungültig' });
+    items[index] = { ...items[index], status: 'offen', ref_id: null };
+    await query('UPDATE vorgang_eintraege SET inhalt = ? WHERE id = ?', [JSON.stringify(analyse), eintragId]);
+    res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
