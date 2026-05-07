@@ -517,7 +517,96 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
   .detail-header{flex-wrap:wrap;gap:8px}
   .detail-header .new-vorgang-btn{font-size:10px;padding:5px 8px}
   #v-dash{padding:14px !important}
+  .cal-toolbar{flex-wrap:wrap}
+  .cal-month-grid .cal-day{min-height:60px !important}
+  .cal-year-grid{grid-template-columns:repeat(2,1fr) !important}
 }
+
+/* ── KALENDER ── */
+#v-kalender{flex-direction:column;overflow:hidden}
+.cal-toolbar{display:flex;align-items:center;gap:10px;padding:14px 20px;background:var(--paper2);border-bottom:1px solid var(--border);flex-shrink:0}
+.cal-toolbar h2{font-family:'Playfair Display',serif;font-weight:400;font-size:18px;color:var(--ink);margin-right:6px}
+.cal-toolbar .cal-title{font-size:14px;font-family:'IBM Plex Sans',sans-serif;color:var(--ink);min-width:220px}
+.cal-nav{display:flex;gap:4px}
+.cal-nav button,.cal-modes button,.cal-today{padding:5px 10px;background:none;border:1px solid var(--border);border-radius:var(--r);color:var(--ink2);font-family:'IBM Plex Mono',monospace;font-size:11px;cursor:pointer;transition:all .12s}
+.cal-nav button:hover,.cal-modes button:hover,.cal-today:hover{border-color:var(--accent);color:var(--accent)}
+.cal-modes{display:flex;gap:0;margin-left:auto}
+.cal-modes button{border-radius:0;border-right-width:0}
+.cal-modes button:first-child{border-top-left-radius:var(--r);border-bottom-left-radius:var(--r)}
+.cal-modes button:last-child{border-radius:0 var(--r) var(--r) 0;border-right-width:1px}
+.cal-modes button.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.cal-body{flex:1;overflow:auto;padding:14px 20px;background:var(--paper)}
+.cal-body::-webkit-scrollbar{width:6px}
+.cal-body::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+
+/* Filter-Leiste der Kalender */
+.cal-filters{display:flex;flex-wrap:wrap;gap:6px;padding:8px 20px;background:var(--paper2);border-bottom:1px solid var(--border);flex-shrink:0}
+.cal-filter-chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;background:var(--paper);border:1px solid var(--border);border-radius:14px;font-size:11px;font-family:'IBM Plex Mono',monospace;color:var(--ink2);cursor:pointer;transition:all .12s;user-select:none}
+.cal-filter-chip:hover{border-color:var(--accent2)}
+.cal-filter-chip.off{opacity:.4;text-decoration:line-through}
+.cal-filter-chip .cal-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+
+/* Monatsansicht */
+.cal-month-head{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-bottom:none;border-radius:var(--r) var(--r) 0 0;overflow:hidden}
+.cal-month-head div{padding:6px 8px;background:var(--paper2);font-size:10px;font-family:'IBM Plex Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);text-align:center}
+.cal-month-grid{display:grid;grid-template-columns:repeat(7,1fr);grid-auto-rows:1fr;gap:1px;background:var(--border);border:1px solid var(--border);border-radius:0 0 var(--r) var(--r);overflow:hidden;min-height:560px}
+.cal-day{background:var(--paper);padding:4px 6px;display:flex;flex-direction:column;gap:2px;min-height:90px;cursor:pointer;transition:background .1s}
+.cal-day:hover{background:var(--paper2)}
+.cal-day.other{background:var(--paper2);color:var(--ink3)}
+.cal-day.today{background:var(--accentl)}
+.cal-day-num{font-size:11px;font-family:'IBM Plex Mono',monospace;color:var(--ink3);align-self:flex-end}
+.cal-day.today .cal-day-num{color:var(--accent);font-weight:600}
+.cal-event{font-size:10px;color:#fff;padding:1px 5px;border-radius:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;line-height:1.4}
+.cal-event:hover{filter:brightness(1.1)}
+.cal-event-more{font-size:9px;color:var(--ink3);font-family:'IBM Plex Mono',monospace;padding:1px 4px}
+
+/* Wochen-/Tagesansicht */
+.cal-week-wrap{display:grid;grid-template-columns:50px 1fr;border:1px solid var(--border);border-radius:var(--r);background:var(--paper);overflow:hidden}
+.cal-week-allday{grid-column:1/-1;display:grid;grid-template-columns:50px 1fr;border-bottom:1px solid var(--border)}
+.cal-week-allday-label{padding:6px;font-size:9px;font-family:'IBM Plex Mono',monospace;color:var(--ink3);background:var(--paper2);border-right:1px solid var(--border);display:flex;align-items:center;justify-content:center;text-transform:uppercase;letter-spacing:.1em}
+.cal-week-allday-cells{display:grid;gap:1px;background:var(--border)}
+.cal-week-allday-cell{background:var(--paper);padding:4px;min-height:24px;display:flex;flex-direction:column;gap:2px}
+.cal-week-head{display:grid;grid-column:2;background:var(--border);gap:1px;border-bottom:1px solid var(--border)}
+.cal-week-head div{background:var(--paper2);padding:6px;text-align:center;font-size:11px;font-family:'IBM Plex Sans',sans-serif;color:var(--ink2)}
+.cal-week-head div.today{color:var(--accent);font-weight:600}
+.cal-hours{display:flex;flex-direction:column;background:var(--paper2);border-right:1px solid var(--border)}
+.cal-hour-label{height:48px;font-size:9px;font-family:'IBM Plex Mono',monospace;color:var(--ink3);padding:2px 4px;text-align:right;border-bottom:1px solid var(--paper3)}
+.cal-week-cols{display:grid;background:var(--border);gap:1px;position:relative}
+.cal-day-col{background:var(--paper);position:relative;min-height:1152px}
+.cal-hour-line{height:48px;border-bottom:1px solid var(--paper3)}
+.cal-event-block{position:absolute;left:2px;right:2px;background:var(--blue);color:#fff;padding:3px 5px;border-radius:2px;font-size:11px;line-height:1.3;overflow:hidden;cursor:pointer;border-left:3px solid rgba(0,0,0,.2)}
+.cal-event-block:hover{filter:brightness(1.1);z-index:2}
+.cal-event-block .ev-title{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cal-event-block .ev-time{font-size:9px;font-family:'IBM Plex Mono',monospace;opacity:.85}
+.cal-now-line{position:absolute;left:0;right:0;height:1px;background:var(--accent);z-index:3;pointer-events:none}
+.cal-now-line::before{content:'';position:absolute;left:-3px;top:-3px;width:7px;height:7px;border-radius:50%;background:var(--accent)}
+
+/* Jahresansicht */
+.cal-year-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.cal-year-month{background:var(--paper);border:1px solid var(--border);border-radius:var(--r);padding:10px}
+.cal-year-month h4{font-size:12px;font-family:'IBM Plex Sans',sans-serif;font-weight:500;color:var(--ink);margin-bottom:6px;cursor:pointer}
+.cal-year-month h4:hover{color:var(--accent)}
+.cal-mini{display:grid;grid-template-columns:repeat(7,1fr);gap:1px}
+.cal-mini-h{font-size:8px;font-family:'IBM Plex Mono',monospace;color:var(--ink3);text-align:center;padding:1px}
+.cal-mini-d{font-size:10px;font-family:'IBM Plex Mono',monospace;text-align:center;padding:3px 0;border-radius:2px;color:var(--ink2);position:relative;cursor:pointer}
+.cal-mini-d.other{color:var(--ink3);opacity:.4}
+.cal-mini-d.today{background:var(--accent);color:#fff;font-weight:600}
+.cal-mini-d.has-events::after{content:'';position:absolute;bottom:1px;left:50%;transform:translateX(-50%);width:3px;height:3px;border-radius:50%;background:var(--accent)}
+.cal-mini-d.today.has-events::after{background:#fff}
+
+/* Tag-Detail-Popover */
+.cal-popover-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:300;align-items:center;justify-content:center}
+.cal-popover-backdrop.visible{display:flex}
+.cal-popover{background:var(--paper);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow2);max-width:480px;width:90%;max-height:80vh;overflow:auto;padding:20px}
+[data-theme="dark"] .cal-popover{background:var(--paper2)}
+.cal-popover h3{font-family:'Playfair Display',serif;font-weight:400;font-size:18px;color:var(--ink);margin-bottom:12px}
+.cal-popover-row{padding:8px 0;border-bottom:1px solid var(--paper3);display:flex;gap:10px;align-items:flex-start}
+.cal-popover-row:last-child{border-bottom:none}
+.cal-popover-bar{width:3px;border-radius:2px;align-self:stretch;flex-shrink:0}
+.cal-popover-meta{font-size:11px;color:var(--ink3);font-family:'IBM Plex Mono',monospace;margin-top:2px}
+.cal-popover-desc{font-size:12px;color:var(--ink2);margin-top:4px;white-space:pre-wrap}
+.cal-popover-close{float:right;background:none;border:none;color:var(--ink3);font-size:18px;cursor:pointer;line-height:1}
+.cal-popover-close:hover{color:var(--accent)}
 </style>
 </head>
 <body>
@@ -566,6 +655,7 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
       <div class="nav-item active" id="n-dash" onclick="showView('dash')"><span class="nav-icon">⊞</span>Dashboard</div>
       <div class="nav-item" id="n-vorgaenge" onclick="showView('vorgaenge')"><span class="nav-icon">◈</span>Vorgänge</div>
       <div class="nav-item" id="n-emails" onclick="showView('emails')"><span class="nav-icon">✉</span>E-Mails</div>
+      <div class="nav-item" id="n-kalender" onclick="showView('kalender')"><span class="nav-icon">◷</span>Kalender</div>
       <div class="nav-item" id="n-boox" onclick="showView('boox')"><span class="nav-icon">✎</span>Boox-Notizen</div>
       <div class="nav-item" id="n-chat" onclick="showView('chat')"><span class="nav-icon">◻</span>KI-Assistent</div>
       <div class="nav-item" id="n-einstellungen" onclick="showView('einstellungen')"><span class="nav-icon">⚙</span>Einstellungen</div>
@@ -669,6 +759,33 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
         <button class="new-vorgang-btn" onclick="openNewVorgang()">+ Neuer Vorgang</button>
       </div>
       <div class="vorgaenge-list" id="vorgaenge-list"></div>
+    </div>
+
+    <!-- KALENDER -->
+    <div class="view" id="v-kalender">
+      <div class="cal-toolbar">
+        <h2>Kalender</h2>
+        <button class="cal-today" onclick="calToday()">Heute</button>
+        <div class="cal-nav">
+          <button onclick="calNav(-1)" title="Zurück">‹</button>
+          <button onclick="calNav(1)" title="Vor">›</button>
+        </div>
+        <div class="cal-title" id="cal-title">–</div>
+        <div class="cal-modes">
+          <button data-mode="day" onclick="calSetMode('day')">Tag</button>
+          <button data-mode="week" class="active" onclick="calSetMode('week')">Woche</button>
+          <button data-mode="month" onclick="calSetMode('month')">Monat</button>
+          <button data-mode="year" onclick="calSetMode('year')">Jahr</button>
+        </div>
+        <button class="cal-today" onclick="syncKalenderView()" id="cal-view-sync">↺ Sync</button>
+      </div>
+      <div class="cal-filters" id="cal-filters"></div>
+      <div class="cal-body" id="cal-body"><div class="loading-row"><div class="spin"></div>Lade Kalender…</div></div>
+    </div>
+
+    <!-- TERMIN-DETAIL POPOVER -->
+    <div class="cal-popover-backdrop" id="cal-popover-backdrop" onclick="if(event.target===this)closeCalPopover()">
+      <div class="cal-popover" id="cal-popover"></div>
     </div>
 
     <!-- BOOX-NOTIZEN -->
@@ -1245,6 +1362,7 @@ function showView(v) {
   if (v === 'einstellungen') loadEinstellungen();
   if (v === 'emails') loadEmailsView();
   if (v === 'boox') loadBoox();
+  if (v === 'kalender') openKalenderView();
 }
 
 // ── STATS ──────────────────────────────────────────────────────────────────────
@@ -1689,6 +1807,402 @@ function renderTerminBlock(events, emptyText, showDate=false) {
       </div>
     </div>`;
   }).join('') + (events.length > (showDate?6:8) ? `<div style="font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace;padding:4px 0">+${events.length-(showDate?6:8)} weitere</div>` : '');
+}
+
+// ── KALENDER-VIEW ─────────────────────────────────────────────────────────────
+const _cal = {
+  mode: 'week',                  // 'day' | 'week' | 'month' | 'year'
+  cursor: new Date(),            // Referenzdatum
+  events: [],                    // im aktuellen Range geladen
+  calendars: [],                 // [{id,label,color,active}]
+  hidden: new Set(),             // calendar_id, die ausgeblendet sind
+  loaded: false,
+  _nowTimer: null
+};
+
+async function openKalenderView() {
+  if (!_cal.loaded) {
+    try {
+      _cal.calendars = await req('GET', '/accounts/calendar');
+    } catch(e) { _cal.calendars = []; }
+    renderCalFilters();
+    _cal.loaded = true;
+  }
+  await loadCalEvents();
+  renderCalendar();
+}
+
+function renderCalFilters() {
+  const el = document.getElementById('cal-filters');
+  if (!_cal.calendars.length) {
+    el.innerHTML = '<span style="font-size:11px;color:var(--ink3);font-family:\'IBM Plex Mono\',monospace">Keine Kalender konfiguriert. Unter ⚙ Einstellungen hinzufügen.</span>';
+    return;
+  }
+  el.innerHTML = _cal.calendars.map(c => {
+    const off = _cal.hidden.has(c.id) ? 'off' : '';
+    return `<div class="cal-filter-chip ${off}" onclick="toggleCalFilter(${c.id})"><span class="cal-dot" style="background:${esc(c.color||'#888')}"></span>${esc(c.label)}</div>`;
+  }).join('');
+}
+
+function toggleCalFilter(id) {
+  if (_cal.hidden.has(id)) _cal.hidden.delete(id);
+  else _cal.hidden.add(id);
+  renderCalFilters();
+  renderCalendar();
+}
+
+function calRange() {
+  const c = new Date(_cal.cursor);
+  c.setHours(0,0,0,0);
+  let from, to;
+  if (_cal.mode === 'day')   { from = new Date(c); to = new Date(c); to.setDate(to.getDate()+1); }
+  else if (_cal.mode === 'week') {
+    from = startOfWeek(c);
+    to = new Date(from); to.setDate(to.getDate()+7);
+  }
+  else if (_cal.mode === 'month') {
+    from = new Date(c.getFullYear(), c.getMonth(), 1);
+    to   = new Date(c.getFullYear(), c.getMonth()+1, 1);
+    // Auf Wochenraster ausdehnen, damit Randwochen auch geladen werden
+    const fStart = startOfWeek(from);
+    const tEnd = startOfWeek(to); tEnd.setDate(tEnd.getDate()+7);
+    from = fStart; to = tEnd;
+  }
+  else { // year
+    from = new Date(c.getFullYear(), 0, 1);
+    to   = new Date(c.getFullYear()+1, 0, 1);
+  }
+  return { from, to };
+}
+
+async function loadCalEvents() {
+  const { from, to } = calRange();
+  try {
+    _cal.events = await req('GET', `/events?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}&limit=2000`);
+  } catch(e) { _cal.events = []; }
+}
+
+function visibleEvents() {
+  return _cal.events.filter(e => !_cal.hidden.has(e.calendar_id));
+}
+
+function calSetMode(m) {
+  _cal.mode = m;
+  document.querySelectorAll('.cal-modes button').forEach(b => b.classList.toggle('active', b.dataset.mode===m));
+  loadCalEvents().then(renderCalendar);
+}
+
+function calNav(dir) {
+  const c = new Date(_cal.cursor);
+  if (_cal.mode === 'day')   c.setDate(c.getDate() + dir);
+  else if (_cal.mode === 'week')  c.setDate(c.getDate() + 7*dir);
+  else if (_cal.mode === 'month') c.setMonth(c.getMonth() + dir);
+  else                            c.setFullYear(c.getFullYear() + dir);
+  _cal.cursor = c;
+  loadCalEvents().then(renderCalendar);
+}
+
+function calToday() {
+  _cal.cursor = new Date();
+  loadCalEvents().then(renderCalendar);
+}
+
+function syncKalenderView() {
+  const btn = document.getElementById('cal-view-sync');
+  btn.textContent = '…'; btn.disabled = true;
+  req('POST', '/sync/calendar')
+    .then(() => { toast('Kalender synchronisiert ✓', 'ok'); return loadCalEvents(); })
+    .then(renderCalendar)
+    .catch(e => toast('Fehler: ' + e.message, 'err'))
+    .finally(() => { btn.textContent = '↺ Sync'; btn.disabled = false; });
+}
+
+function renderCalendar() {
+  if (_cal._nowTimer) { clearInterval(_cal._nowTimer); _cal._nowTimer = null; }
+  document.getElementById('cal-title').textContent = calTitleText();
+  const body = document.getElementById('cal-body');
+  if (_cal.mode === 'month')      body.innerHTML = renderCalMonth();
+  else if (_cal.mode === 'year')  body.innerHTML = renderCalYear();
+  else                            body.innerHTML = renderCalWeek(_cal.mode === 'day' ? 1 : 7);
+  if (_cal.mode === 'week' || _cal.mode === 'day') {
+    scrollToBusinessHours();
+    drawNowLine();
+    _cal._nowTimer = setInterval(drawNowLine, 60000);
+  }
+}
+
+function calTitleText() {
+  const c = _cal.cursor;
+  if (_cal.mode === 'day')   return c.toLocaleDateString('de-DE', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+  if (_cal.mode === 'week')  {
+    const s = startOfWeek(c); const e = new Date(s); e.setDate(e.getDate()+6);
+    const w = isoWeek(s);
+    return `KW ${w} · ${s.toLocaleDateString('de-DE',{day:'numeric',month:'short'})} – ${e.toLocaleDateString('de-DE',{day:'numeric',month:'short',year:'numeric'})}`;
+  }
+  if (_cal.mode === 'month') return c.toLocaleDateString('de-DE', { month:'long', year:'numeric' });
+  return String(c.getFullYear());
+}
+
+function startOfWeek(d) {
+  const x = new Date(d); x.setHours(0,0,0,0);
+  const day = (x.getDay() + 6) % 7; // Mo=0 .. So=6
+  x.setDate(x.getDate() - day);
+  return x;
+}
+
+function isoWeek(d) {
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = (t.getUTCDay() + 6) % 7;
+  t.setUTCDate(t.getUTCDate() - dayNum + 3);
+  const firstThursday = new Date(Date.UTC(t.getUTCFullYear(), 0, 4));
+  return 1 + Math.round(((t - firstThursday) / 86400000 - 3 + ((firstThursday.getUTCDay() + 6) % 7)) / 7);
+}
+
+function sameDay(a, b) {
+  return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate();
+}
+
+function eventColor(e) {
+  return (e.cal_color && e.cal_color.startsWith('#')) ? e.cal_color : '#1a3a5c';
+}
+
+// — Monatsansicht —
+function renderCalMonth() {
+  const c = _cal.cursor;
+  const first = new Date(c.getFullYear(), c.getMonth(), 1);
+  const start = startOfWeek(first);
+  const today = new Date();
+  const days = [];
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(start); d.setDate(start.getDate() + i);
+    days.push(d);
+  }
+  const evs = visibleEvents();
+  const dayMap = new Map(); // 'YYYY-MM-DD' → events[]
+  for (const e of evs) {
+    if (!e.start_time) continue;
+    const s = new Date(e.start_time);
+    const en = e.end_time ? new Date(e.end_time) : s;
+    const cur = new Date(s); cur.setHours(0,0,0,0);
+    const last = new Date(en); last.setHours(0,0,0,0);
+    while (cur <= last) {
+      const k = ymd(cur);
+      if (!dayMap.has(k)) dayMap.set(k, []);
+      dayMap.get(k).push(e);
+      cur.setDate(cur.getDate()+1);
+    }
+  }
+  const weekDays = ['Mo','Di','Mi','Do','Fr','Sa','So'];
+  let html = '<div class="cal-month-head">' + weekDays.map(d=>`<div>${d}</div>`).join('') + '</div>';
+  html += '<div class="cal-month-grid">';
+  for (const d of days) {
+    const isCur = d.getMonth() === c.getMonth();
+    const isToday = sameDay(d, today);
+    const dayEvs = dayMap.get(ymd(d)) || [];
+    const shown = dayEvs.slice(0, 4);
+    const more = dayEvs.length - shown.length;
+    html += `<div class="cal-day ${isCur?'':'other'} ${isToday?'today':''}" onclick="calOpenDay('${ymd(d)}')">
+      <div class="cal-day-num">${d.getDate()}</div>
+      ${shown.map(e=>{
+        const t = e.all_day ? '' : new Date(e.start_time).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Berlin'})+' ';
+        return `<div class="cal-event" style="background:${eventColor(e)}" onclick="event.stopPropagation();showEventDetail(${e.id})">${esc(t+(e.title||'?'))}</div>`;
+      }).join('')}
+      ${more>0?`<div class="cal-event-more">+${more} weitere</div>`:''}
+    </div>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+// — Wochen-/Tagesansicht —
+function renderCalWeek(numDays) {
+  const c = new Date(_cal.cursor); c.setHours(0,0,0,0);
+  const start = numDays === 7 ? startOfWeek(c) : new Date(c);
+  const today = new Date();
+  const cols = [];
+  for (let i = 0; i < numDays; i++) {
+    const d = new Date(start); d.setDate(start.getDate()+i);
+    cols.push(d);
+  }
+  const evs = visibleEvents();
+  const allDay = evs.filter(e => e.all_day || isMultiDay(e));
+  const timed  = evs.filter(e => !(e.all_day || isMultiDay(e)));
+
+  // Header
+  const headHtml = cols.map(d => {
+    const isToday = sameDay(d, today);
+    return `<div class="${isToday?'today':''}">${d.toLocaleDateString('de-DE',{weekday:'short'})} · ${d.getDate()}.${d.getMonth()+1}.</div>`;
+  }).join('');
+
+  // All-Day-Zeile
+  const adCells = cols.map(d => {
+    const here = allDay.filter(e => {
+      const s = new Date(e.start_time); const en = e.end_time ? new Date(e.end_time) : s;
+      const ds = new Date(d); ds.setHours(0,0,0,0);
+      const de = new Date(d); de.setHours(23,59,59,999);
+      return s <= de && en >= ds;
+    });
+    return `<div class="cal-week-allday-cell">
+      ${here.map(e => `<div class="cal-event" style="background:${eventColor(e)}" onclick="showEventDetail(${e.id})">${esc(e.title||'?')}</div>`).join('')}
+    </div>`;
+  }).join('');
+
+  // Stundenraster
+  let hoursHtml = '';
+  for (let h = 0; h < 24; h++) {
+    hoursHtml += `<div class="cal-hour-label">${String(h).padStart(2,'0')}:00</div>`;
+  }
+  const cellGrid = cols.map(d => {
+    const dayKey = ymd(d);
+    const dayEvs = timed.filter(e => sameDay(new Date(e.start_time), d));
+    let blocks = '';
+    for (const e of dayEvs) {
+      const s = new Date(e.start_time);
+      const en = e.end_time ? new Date(e.end_time) : new Date(s.getTime()+30*60000);
+      const top = (s.getHours() + s.getMinutes()/60) * 48;
+      const dur = Math.max(0.4, (en - s) / 3600000);
+      const h = dur * 48;
+      const t1 = s.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Berlin'});
+      const t2 = en.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Berlin'});
+      blocks += `<div class="cal-event-block" data-day="${dayKey}" style="top:${top}px;height:${h-2}px;background:${eventColor(e)}" onclick="showEventDetail(${e.id})">
+        <div class="ev-title">${esc(e.title||'?')}</div>
+        <div class="ev-time">${t1}–${t2}${e.location?' · '+esc(e.location):''}</div>
+      </div>`;
+    }
+    let lines = '';
+    for (let h = 0; h < 24; h++) lines += '<div class="cal-hour-line"></div>';
+    return `<div class="cal-day-col" data-day="${dayKey}">${lines}${blocks}</div>`;
+  }).join('');
+
+  const colTpl = `repeat(${numDays}, 1fr)`;
+  return `<div class="cal-week-wrap" style="grid-template-columns:50px 1fr">
+    <div class="cal-week-allday">
+      <div class="cal-week-allday-label">ganztags</div>
+      <div class="cal-week-allday-cells" style="grid-template-columns:${colTpl}">${adCells}</div>
+    </div>
+    <div></div>
+    <div class="cal-week-head" style="grid-template-columns:${colTpl}">${headHtml}</div>
+    <div class="cal-hours">${hoursHtml}</div>
+    <div class="cal-week-cols" style="grid-template-columns:${colTpl}">${cellGrid}</div>
+  </div>`;
+}
+
+function isMultiDay(e) {
+  if (!e.start_time || !e.end_time) return false;
+  const s = new Date(e.start_time), en = new Date(e.end_time);
+  return !sameDay(s, en);
+}
+
+function scrollToBusinessHours() {
+  // 7 Uhr ins Bild scrollen
+  const body = document.getElementById('cal-body');
+  if (body) body.scrollTop = 7 * 48;
+}
+
+function drawNowLine() {
+  document.querySelectorAll('.cal-now-line').forEach(el => el.remove());
+  const now = new Date();
+  const cols = document.querySelectorAll('.cal-day-col');
+  if (!cols.length) return;
+  const todayKey = ymd(now);
+  const top = (now.getHours() + now.getMinutes()/60) * 48;
+  cols.forEach(col => {
+    if (col.dataset.day === todayKey) {
+      const ln = document.createElement('div');
+      ln.className = 'cal-now-line';
+      ln.style.top = top + 'px';
+      col.appendChild(ln);
+    }
+  });
+}
+
+// — Jahresansicht —
+function renderCalYear() {
+  const y = _cal.cursor.getFullYear();
+  const today = new Date();
+  const evs = visibleEvents();
+  const evDays = new Set(evs.map(e => e.start_time ? ymd(new Date(e.start_time)) : null).filter(Boolean));
+  const months = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+  let html = '<div class="cal-year-grid">';
+  for (let m = 0; m < 12; m++) {
+    html += `<div class="cal-year-month">
+      <h4 onclick="calJumpToMonth(${y},${m})">${months[m]}</h4>
+      ${renderMiniMonth(y, m, today, evDays)}
+    </div>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+function renderMiniMonth(year, month, today, evDays) {
+  const first = new Date(year, month, 1);
+  const start = startOfWeek(first);
+  const heads = ['M','D','M','D','F','S','S'];
+  let html = '<div class="cal-mini">';
+  html += heads.map(h => `<div class="cal-mini-h">${h}</div>`).join('');
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(start); d.setDate(start.getDate() + i);
+    const isCur = d.getMonth() === month;
+    const isToday = sameDay(d, today);
+    const has = evDays.has(ymd(d));
+    if (i >= 35 && d.getMonth() !== month && !isCur) continue; // leere 6. Reihe ausblenden
+    html += `<div class="cal-mini-d ${isCur?'':'other'} ${isToday?'today':''} ${has?'has-events':''}" onclick="calJumpToDay(${d.getFullYear()},${d.getMonth()},${d.getDate()})">${d.getDate()}</div>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+function calJumpToMonth(y, m) {
+  _cal.cursor = new Date(y, m, 1);
+  calSetMode('month');
+}
+
+function calJumpToDay(y, m, d) {
+  _cal.cursor = new Date(y, m, d);
+  calSetMode('day');
+}
+
+function calOpenDay(ymdStr) {
+  const [y, m, d] = ymdStr.split('-').map(Number);
+  _cal.cursor = new Date(y, m-1, d);
+  calSetMode('day');
+}
+
+function ymd(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+// — Event-Detail-Popover —
+function showEventDetail(id) {
+  const e = _cal.events.find(x => x.id === id);
+  if (!e) return;
+  const s = e.start_time ? new Date(e.start_time) : null;
+  const en = e.end_time ? new Date(e.end_time) : null;
+  const fmt = d => d ? d.toLocaleString('de-DE',{weekday:'long',day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'Europe/Berlin'}) : '';
+  const fmtD = d => d ? d.toLocaleDateString('de-DE',{weekday:'long',day:'numeric',month:'long',year:'numeric'}) : '';
+  let timeStr;
+  if (e.all_day) timeStr = fmtD(s) + ' (ganztägig)';
+  else if (s && en && !sameDay(s, en)) timeStr = fmt(s) + ' – ' + fmt(en);
+  else if (s && en) timeStr = fmtD(s) + ' · ' + s.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Berlin'}) + '–' + en.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Berlin'});
+  else timeStr = fmt(s);
+  document.getElementById('cal-popover').innerHTML = `
+    <button class="cal-popover-close" onclick="closeCalPopover()">×</button>
+    <h3>${esc(e.title || '(ohne Titel)')}</h3>
+    <div class="cal-popover-row">
+      <div class="cal-popover-bar" style="background:${eventColor(e)}"></div>
+      <div style="flex:1">
+        <div style="font-size:12px;color:var(--ink2)">${esc(timeStr)}</div>
+        <div class="cal-popover-meta">${esc(e.cal_label || 'Kalender')}</div>
+      </div>
+    </div>
+    ${e.location ? `<div class="cal-popover-row"><div style="flex:1"><div class="cal-popover-meta">Ort</div><div style="font-size:12px;color:var(--ink2)">${esc(e.location)}</div></div></div>` : ''}
+    ${e.description ? `<div class="cal-popover-row"><div style="flex:1"><div class="cal-popover-meta">Beschreibung</div><div class="cal-popover-desc">${esc(e.description)}</div></div></div>` : ''}
+  `;
+  document.getElementById('cal-popover-backdrop').classList.add('visible');
+}
+
+function closeCalPopover() {
+  document.getElementById('cal-popover-backdrop').classList.remove('visible');
 }
 
 // ── VORGÄNGE ───────────────────────────────────────────────────────────────────

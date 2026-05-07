@@ -1052,16 +1052,25 @@ app.post('/sync/calendar', async (req, res) => {
 // ── TERMINE ───────────────────────────────────────────────────────────────────
 app.get('/events', async (req, res) => {
   try {
-    const days = parseInt(req.query.days) || 14;
-    const from = new Date().toISOString();
-    const until = new Date();
-    until.setDate(until.getDate() + days);
+    let from, until, limit;
+    if (req.query.from && req.query.to) {
+      from = new Date(req.query.from);
+      until = new Date(req.query.to);
+      if (isNaN(from) || isNaN(until)) return res.status(400).json({ error: 'Ungültige from/to-Werte' });
+      limit = parseInt(req.query.limit) || 2000;
+    } else {
+      const days = parseInt(req.query.days) || 14;
+      from = new Date();
+      until = new Date();
+      until.setDate(until.getDate() + days);
+      limit = parseInt(req.query.limit) || 100;
+    }
     const rows = await query(`
       SELECT e.*, c.label as cal_label, c.color as cal_color
       FROM events e JOIN calendars c ON c.id = e.calendar_id
-      WHERE e.start_time >= ? AND e.start_time <= ?
-      ORDER BY e.start_time ASC LIMIT 100
-    `, [from, until.toISOString()]);
+      WHERE e.end_time >= ? AND e.start_time <= ?
+      ORDER BY e.start_time ASC LIMIT ?
+    `, [from.toISOString(), until.toISOString(), limit]);
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
