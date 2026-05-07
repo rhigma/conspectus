@@ -525,49 +525,109 @@ app.get('/search/ai', async (req, res) => {
 });
 
 // ── BOOX-SYNC ─────────────────────────────────────────────────────────────────
+const normItem = (extra = {}) => ({ status: 'offen', ref_id: null, ...extra });
+const normVorschlaege = (analyse) => ({
+  ...analyse,
+  aufgaben: (analyse.aufgaben || []).map(a => typeof a === 'string' ? normItem({ titel: a }) : normItem(a)),
+  delegationen: (analyse.delegationen || []).map(d => normItem(d)),
+  termine: (analyse.termine || []).map(t => normItem(t)),
+});
+
 async function booxNotizVerarbeiten(pfad) {
   const buffer = await ncDownload(pfad);
-  const analyse = await notizAnalysieren(buffer.toString('base64'), 'application/pdf');
+  const dateiname = pfad.split('/').pop();
 
-  // Vorgang-ID auflösen: direkt, per Titelsuche, oder neu anlegen
+  // Bestehenden Eintrag mit gleichem Quelldateinamen suchen (Stammname inkl. .pdf,
+  // weil der Versions-Suffix erst beim Verschieben in den Verarbeitet-Ordner
+  // angehängt wird; im Quellordner bleibt der Name stabil).
+  const existing = await queryOne(
+    `SELECT id, vorgang_id, inhalt, datei_pfad FROM vorgang_eintraege
+       WHERE titel = ? ORDER BY created_at DESC LIMIT 1`,
+    [`Boox: ${dateiname}`]
+  );
+
+  let altAnalyse = null;
+  let bekannteHashes = [];
+  if (existing) {
+    try {
+      altAnalyse = JSON.parse(existing.inhalt);
+      bekannteHashes = altAnalyse.seiten_hashes || [];
+    } catch (e) {
+      console.warn('[Boox] Vorhandener Eintrag hat kaputtes JSON, behandle als neu');
+    }
+  }
+
+  const analyse = await notizAnalysieren(buffer.toString('base64'), 'application/pdf', bekannteHashes);
+
+  // Re-Sync ohne neue Seiten → nur Datei verschieben, sonst nichts tun
+  if (existing && altAnalyse && analyse.neue_seiten === 0) {
+    // Aktuelle Hashes übernehmen (Reihenfolge könnte sich theoretisch geändert haben)
+    altAnalyse.seiten_hashes = analyse.seiten_hashes;
+    altAnalyse.seiten = analyse.seiten;
+    await query('UPDATE vorgang_eintraege SET inhalt = ? WHERE id = ?', [JSON.stringify(altAnalyse), existing.id]);
+    await booxVerarbeitet(pfad);
+    console.log(`[Boox] ${dateiname} → keine neuen Seiten, skip`);
+    return { pfad, vorgangId: existing.vorgang_id, neue_seiten: 0, vorschlaege: 0 };
+  }
+
+  const neueVorschlaege = normVorschlaege(analyse);
+
+  // Re-Sync mit neuen Seiten → an bestehenden Eintrag anhängen
+  if (existing && altAnalyse) {
+    const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
+    altAnalyse.seiten_hashes = analyse.seiten_hashes;
+    altAnalyse.seiten = analyse.seiten;
+    altAnalyse.transkription = (altAnalyse.transkription || '')
+      + `\n\n--- Ergänzung ${stamp} ---\n`
+      + (analyse.transkription || '');
+    if (analyse.zusammenfassung) {
+      // Zusammenfassung ergänzen statt überschreiben (alte könnte schon vom User
+      // mental verarbeitet worden sein)
+      altAnalyse.zusammenfassung = (altAnalyse.zusammenfassung || '')
+        + `\n\n[${stamp}] ` + analyse.zusammenfassung;
+    }
+    altAnalyse.aufgaben = [...(altAnalyse.aufgaben || []), ...neueVorschlaege.aufgaben];
+    altAnalyse.delegationen = [...(altAnalyse.delegationen || []), ...neueVorschlaege.delegationen];
+    altAnalyse.termine = [...(altAnalyse.termine || []), ...neueVorschlaege.termine];
+
+    await query(
+      'UPDATE vorgang_eintraege SET inhalt = ?, datei_pfad = ? WHERE id = ?',
+      [JSON.stringify(altAnalyse), pfad, existing.id]
+    );
+    await booxVerarbeitet(pfad);
+    const offen = neueVorschlaege.aufgaben.length + neueVorschlaege.delegationen.length + neueVorschlaege.termine.length;
+    console.log(`[Boox] ${dateiname} → Vorgang #${existing.vorgang_id}, +${analyse.neue_seiten} Seiten, +${offen} Vorschläge`);
+    return { pfad, vorgangId: existing.vorgang_id, neue_seiten: analyse.neue_seiten, vorschlaege: offen, analyse: altAnalyse };
+  }
+
+  // Erstverarbeitung: Vorgang-ID auflösen (direkt, per Titelsuche, oder neu anlegen)
   let vorgangId = analyse.vorgang_id ? parseInt(analyse.vorgang_id) : null;
   if (!vorgangId && analyse.vorgang_titel) {
-    const existing = await queryOne(
+    const vorhanden = await queryOne(
       'SELECT id FROM vorgaenge WHERE titel LIKE ? LIMIT 1',
       [`%${analyse.vorgang_titel}%`]
     );
-    if (existing) {
-      vorgangId = existing.id;
+    if (vorhanden) {
+      vorgangId = vorhanden.id;
     } else {
       const ncPfad = await vorgangOrdner(analyse.vorgang_titel).catch(() => null);
       const result = await query(
         'INSERT INTO vorgaenge (titel, typ, beschreibung, nc_ordner) VALUES (?,?,?,?)',
-        [analyse.vorgang_titel, 'sonstiges', `Aus Boox-Notiz: ${pfad.split('/').pop()}`, ncPfad]
+        [analyse.vorgang_titel, 'sonstiges', `Aus Boox-Notiz: ${dateiname}`, ncPfad]
       );
       vorgangId = result.insertId;
     }
   }
 
-  // Vorschläge normalisieren: jedes Item bekommt status="offen" und ref_id=null,
-  // damit Übernahme/Verwerfung später pro Item nachvollzogen werden kann.
-  const normItem = (extra = {}) => ({ status: 'offen', ref_id: null, ...extra });
-  analyse.aufgaben = (analyse.aufgaben || []).map(a =>
-    typeof a === 'string' ? normItem({ titel: a }) : normItem(a)
-  );
-  analyse.delegationen = (analyse.delegationen || []).map(d => normItem(d));
-  analyse.termine = (analyse.termine || []).map(t => normItem(t));
-
-  // Chronologie-Eintrag (enthält die Vorschläge — werden NICHT mehr automatisch
-  // in todos/events/delegationen übernommen; das passiert per Curation-UI).
   await query(
     'INSERT INTO vorgang_eintraege (vorgang_id, typ, titel, inhalt, datei_pfad) VALUES (?,?,?,?,?)',
-    [vorgangId, 'notiz', `Boox: ${pfad.split('/').pop()}`, JSON.stringify(analyse), pfad]
+    [vorgangId, 'notiz', `Boox: ${dateiname}`, JSON.stringify(neueVorschlaege), pfad]
   );
 
   await booxVerarbeitet(pfad);
-  const offen = analyse.aufgaben.length + analyse.delegationen.length + analyse.termine.length;
-  console.log(`[Boox] ${pfad.split('/').pop()} → Vorgang #${vorgangId}, ${offen} Vorschläge`);
-  return { pfad, vorgangId, vorschlaege: offen, analyse };
+  const offen = neueVorschlaege.aufgaben.length + neueVorschlaege.delegationen.length + neueVorschlaege.termine.length;
+  console.log(`[Boox] ${dateiname} → Vorgang #${vorgangId}, ${analyse.seiten} Seiten, ${offen} Vorschläge`);
+  return { pfad, vorgangId, neue_seiten: analyse.seiten, vorschlaege: offen, analyse: neueVorschlaege };
 }
 
 app.post('/boox/sync', async (req, res) => {

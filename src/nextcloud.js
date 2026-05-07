@@ -184,7 +184,16 @@ export async function neueBooxNotizen() {
 
 export async function booxVerarbeitet(pfad) {
   const dateiname = pfad.split('/').pop();
-  const ziel = `${BOOX_VERARBEITET}/${dateiname}`;
+  // Zeitstempel zwischen Stamm und Endung einfügen, damit Re-Syncs derselben
+  // Notiz nicht stumm überschreiben: "Studientag.pdf" → "Studientag.2026-05-07T2318.pdf"
+  const dot = dateiname.lastIndexOf('.');
+  const stamm = dot > 0 ? dateiname.slice(0, dot) : dateiname;
+  const ext = dot > 0 ? dateiname.slice(dot) : '';
+  const ts = new Date().toISOString().slice(0, 16).replace(/[-:]/g, '');
+  // → 20260507T2318
+  const stamp = `${ts.slice(0,4)}-${ts.slice(4,6)}-${ts.slice(6,8)}T${ts.slice(9,13)}`;
+  const versioniert = `${stamm}.${stamp}${ext}`;
+  const ziel = `${BOOX_VERARBEITET}/${versioniert}`;
   try {
     await ncMkdir(BOOX_VERARBEITET);
     // Pfad-Segmente einzeln enkodieren (Umlaute!)
@@ -194,7 +203,7 @@ export async function booxVerarbeitet(pfad) {
     const dest = `${NC_URL()}/remote.php/dav/files/${NC_USER()}${encZiel}`;
     const res = await fetch(url, {
       method: 'MOVE',
-      headers: { Authorization: authHeader(), Destination: dest, Overwrite: 'T' },
+      headers: { Authorization: authHeader(), Destination: dest, Overwrite: 'F' },
     });
     if (!res.ok) console.warn('[Boox] MOVE HTTP', res.status, await res.text());
     return res.ok;

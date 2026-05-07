@@ -1,5 +1,5 @@
 ﻿import Anthropic from '@anthropic-ai/sdk';
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
 import { query, queryOne } from './db.js';
 import { getEmailContext, moveToErledigt, moveToVorgangFolder, vorgangFolderPath } from './imap.js';
 import { vorgangOrdner, taskAnlegen } from './nextcloud.js';
@@ -304,7 +304,7 @@ Antworte NUR mit JSON:
 
 // ── Notiz-Analyse (reMarkable / Foto) ─────────────────────────────────────────
 
-export async function notizAnalysieren(imageBase64, mediaType = 'image/jpeg') {
+export async function notizAnalysieren(imageBase64, mediaType = 'image/jpeg', bekannteHashes = []) {
   // Liste der Bild-Blocks für den Vision-Call (eines pro PDF-Seite)
   let pages = [{ media_type: mediaType, data: imageBase64 }];
 
@@ -352,25 +352,52 @@ export async function notizAnalysieren(imageBase64, mediaType = 'image/jpeg') {
     }
   }
 
+  // Pro Seite SHA-256 der gerenderten Bytes berechnen (für Re-Sync-Erkennung)
+  pages = pages.map((p, i) => ({
+    ...p,
+    sha: createHash('sha256').update(Buffer.from(p.data, 'base64')).digest('hex'),
+    originalIndex: i + 1,
+  }));
+
+  const seitenHashes = pages.map(p => p.sha);
+  const bekannt = new Set(bekannteHashes);
+  const neuePages = pages.filter(p => !bekannt.has(p.sha));
+
+  // Wenn keine neuen Seiten: ohne Vision-Call zurückgeben
+  if (neuePages.length === 0) {
+    return {
+      transkription: '',
+      vorgang_id: null,
+      vorgang_titel: null,
+      aufgaben: [],
+      delegationen: [],
+      termine: [],
+      zusammenfassung: '',
+      seiten: pages.length,
+      neue_seiten: 0,
+      seiten_hashes: seitenHashes,
+    };
+  }
+
   const vorgaenge = await query(
     'SELECT id, titel FROM vorgaenge WHERE status != ? ORDER BY updated_at DESC LIMIT 20',
     ['abgeschlossen']
   );
 
-  const seitenHinweis = pages.length > 1
-    ? `Die Notiz besteht aus ${pages.length} Seiten (in Reihenfolge unten angehängt). Transkribiere alle Seiten in der Reihenfolge und extrahiere Aufgaben/Delegationen/Termine seitenübergreifend.`
-    : '';
+  const seitenInfo = neuePages.length === pages.length
+    ? (pages.length > 1 ? `Die Notiz besteht aus ${pages.length} Seiten (in Reihenfolge unten angehängt).` : '')
+    : `Die Notiz hat insgesamt ${pages.length} Seiten; ${neuePages.length} davon (Originalseiten ${neuePages.map(p => p.originalIndex).join(', ')}) sind neu hinzugekommen und unten angehängt. Bereits bekannte Seiten werden separat verwaltet — bewerte nur die neuen.`;
 
   const content = [
-    ...pages.map(p => ({ type: 'image', source: { type: 'base64', media_type: p.media_type, data: p.data } })),
+    ...neuePages.map(p => ({ type: 'image', source: { type: 'base64', media_type: p.media_type, data: p.data } })),
     { type: 'text', text: `Du analysierst eine handgeschriebene Notiz des Schulleiters.
-${seitenHinweis}
+${seitenInfo}
 
 Bestehende Vorgänge:
 ${vorgaenge.map(v => `- #${v.id}: ${v.titel}`).join('\n') || 'Keine'}
 
 Bitte:
-1. Transkribiere den handgeschriebenen Text vollständig (bei mehreren Seiten alle, mit Seitenmarkern "--- Seite N ---")
+1. Transkribiere den handgeschriebenen Text der angehängten Seiten vollständig (bei mehreren Seiten mit Markern "--- Seite N ---")
 2. Erkenne zu welchem Vorgang die Notiz gehört (oder ob ein neuer Vorgang angelegt werden soll)
 3. Extrahiere: Aufgaben, Delegationen, Termine
 
@@ -396,9 +423,17 @@ Antworte mit JSON:
     const text = response.content[0].text.trim().replace(/```json|```/g, '');
     const parsed = JSON.parse(text);
     parsed.seiten = pages.length;
+    parsed.neue_seiten = neuePages.length;
+    parsed.seiten_hashes = seitenHashes;
     return parsed;
   } catch {
-    return { transkription: response.content[0].text, seiten: pages.length, fehler: 'JSON-Parse fehlgeschlagen' };
+    return {
+      transkription: response.content[0].text,
+      seiten: pages.length,
+      neue_seiten: neuePages.length,
+      seiten_hashes: seitenHashes,
+      fehler: 'JSON-Parse fehlgeschlagen',
+    };
   }
 }
 
