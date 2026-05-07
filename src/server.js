@@ -781,8 +781,30 @@ app.post('/boox/:eintragId/reset', async (req, res) => {
 
 // ── CRON ──────────────────────────────────────────────────────────────────────
 const interval = parseInt(process.env.SYNC_INTERVAL_MINUTES) || 5;
-const briefingH = parseInt(process.env.BRIEFING_HOUR) || 6;
-const briefingM = parseInt(process.env.BRIEFING_MINUTE) || 30;
+
+// Briefing-Zeit zur Laufzeit umplanbar
+let briefingTask = null;
+async function getBriefingTime() {
+  const row = await queryOne("SELECT value FROM settings WHERE `key` = 'briefing_time'");
+  if (row && /^\d{1,2}:\d{2}$/.test(row.value)) {
+    const [h, m] = row.value.split(':').map(Number);
+    if (h >= 0 && h < 24 && m >= 0 && m < 60) return { h, m };
+  }
+  return {
+    h: parseInt(process.env.BRIEFING_HOUR) || 6,
+    m: parseInt(process.env.BRIEFING_MINUTE) || 30,
+  };
+}
+async function planBriefing() {
+  if (briefingTask) { try { briefingTask.stop(); } catch (e) {} briefingTask = null; }
+  const { h, m } = await getBriefingTime();
+  briefingTask = cron.schedule(`${m} ${h} * * *`, async () => {
+    console.log('[Briefing] Erstelle Morgen-Briefing...');
+    try { await morgenbriefing(); console.log('[Briefing] OK'); }
+    catch (e) { console.error('[Briefing] Fehler:', e.message); }
+  });
+  console.log(`[Briefing] Geplant für ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')} Uhr`);
+}
 
 if (!global._cronStarted) {
   global._cronStarted = true;
@@ -794,12 +816,8 @@ if (!global._cronStarted) {
     catch (e) { console.error('Sync Fehler:', e.message); }
   });
 
-  // Morgen-Briefing
-  cron.schedule(`${briefingM} ${briefingH} * * *`, async () => {
-    console.log('[Briefing] Erstelle Morgen-Briefing...');
-    try { await morgenbriefing(); console.log('[Briefing] OK'); }
-    catch (e) { console.error('[Briefing] Fehler:', e.message); }
-  });
+  // Morgen-Briefing (Zeit aus settings, asynchron beim Boot)
+  planBriefing().catch(e => console.error('[Briefing] Plan-Fehler:', e.message));
 
   // INBOX-UID-Abgleich: außerhalb INBOX = erledigt (stündlich, Minute 45)
   cron.schedule('45 * * * *', async () => {
@@ -838,9 +856,10 @@ async function start() {
   await ncMkdir('/reMarkable/neu').catch(() => {});
   await ncMkdir('/reMarkable/verarbeitet').catch(() => {});
 
-  app.listen(PORT, '127.0.0.1', () => {
+  app.listen(PORT, '127.0.0.1', async () => {
     console.log(`KI-Assistent v2 läuft auf http://127.0.0.1:${PORT}`);
-    console.log(`Sync alle ${interval} Min. | Briefing ${briefingH}:${String(briefingM).padStart(2,'0')} Uhr`);
+    const bt = await getBriefingTime();
+    console.log(`Sync alle ${interval} Min. | Briefing ${String(bt.h).padStart(2,'0')}:${String(bt.m).padStart(2,'0')} Uhr`);
   });
 }
 
@@ -1059,10 +1078,18 @@ app.get('/settings', async (req, res) => {
 
 app.put('/settings/:key', async (req, res) => {
   try {
+    const key = req.params.key;
+    const value = req.body.value ?? null;
+    if (key === 'briefing_time' && value && !/^\d{1,2}:\d{2}$/.test(value)) {
+      return res.status(400).json({ error: 'Ungültiges Zeitformat (HH:MM erwartet)' });
+    }
     await query(
       'INSERT INTO settings (`key`, value) VALUES (?,?) ON DUPLICATE KEY UPDATE value = VALUES(value)',
-      [req.params.key, req.body.value ?? null]
+      [key, value]
     );
+    if (key === 'briefing_time') {
+      await planBriefing().catch(e => console.error('[Briefing] Reschedule:', e.message));
+    }
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -1206,12 +1233,13 @@ app.get('/system/config', async (req, res) => {
       queryOne('SELECT COUNT(*) as n FROM delegations_personen WHERE aktiv=1'),
       getTokenStats(),
     ]);
+    const bt = await getBriefingTime();
     res.json({
       email_accounts: emailCount.n,
       calendars: calCount.n,
       personen: personCount.n,
       sync_interval: process.env.SYNC_INTERVAL_MINUTES || 5,
-      briefing_time: `${process.env.BRIEFING_HOUR || 6}:${String(process.env.BRIEFING_MINUTE || 30).padStart(2,'0')}`,
+      briefing_time: `${String(bt.h).padStart(2,'0')}:${String(bt.m).padStart(2,'0')}`,
       token_stats: tokenStats,
       nc_url: process.env.NC_URL,
       boox_pfad: '/onyx/GoColor7_2/Notizblöcke',

@@ -845,6 +845,18 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
           </select>
         </div>
 
+        <!-- BRIEFING-ZEIT -->
+        <div class="card">
+          <div class="card-header"><span class="card-title">☀ Morgen-Briefing</span></div>
+          <div style="font-size:11px;color:var(--ink2);line-height:1.65;margin-bottom:10px">
+            Uhrzeit für die tägliche Push-Benachrichtigung mit dem Briefing.
+          </div>
+          <div style="display:flex;gap:6px">
+            <input id="s-briefing-time" type="time" style="flex:1;padding:7px 8px;border:1px solid var(--border);border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:12px;background:var(--paper);color:var(--ink)"/>
+            <button onclick="saveBriefingTime()" style="padding:7px 12px;background:var(--accent);color:#fff;border:none;border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:10px;cursor:pointer;white-space:nowrap">Speichern</button>
+          </div>
+        </div>
+
         <!-- SYSTEM -->
         <div class="card">
           <div class="card-header"><span class="card-title">⚙ System</span></div>
@@ -2144,7 +2156,25 @@ async function loadEinstellungen() {
     loadSystemInfo(),
     loadTodoKalenderSetting(),
     loadPushoverSettings(),
+    loadBriefingTime(),
   ]);
+}
+
+async function loadBriefingTime() {
+  try {
+    const cfg = await req('GET', '/system/config');
+    if (cfg.briefing_time) document.getElementById('s-briefing-time').value = cfg.briefing_time;
+  } catch(_) {}
+}
+
+async function saveBriefingTime() {
+  const val = document.getElementById('s-briefing-time').value;
+  if (!val) { toast('Bitte Uhrzeit eingeben', 'err'); return; }
+  try {
+    await req('PUT', '/settings/briefing_time', { value: val });
+    toast(`Briefing-Zeit gespeichert ✓ (${val} Uhr)`, 'ok');
+    loadSystemInfo();
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
 }
 
 async function loadPushoverSettings() {
