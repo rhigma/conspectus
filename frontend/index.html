@@ -1976,7 +1976,19 @@ function sameDay(a, b) {
 }
 
 function eventColor(e) {
-  return (e.cal_color && e.cal_color.startsWith('#')) ? e.cal_color : '#1a3a5c';
+  const c = (e.cal_color || '').trim();
+  return /^(#[0-9a-f]{3,8}|rgb|hsl)/i.test(c) ? c : '#1a3a5c';
+}
+
+// Bei Ganztagsereignissen ist DTEND exklusiv (nächster Tag) – einen Tag abziehen,
+// damit der Termin nicht auf dem Folgetag erscheint.
+function eventDayBounds(e) {
+  const s = new Date(e.start_time);
+  const en = e.end_time ? new Date(e.end_time) : s;
+  const cur = new Date(s); cur.setHours(0,0,0,0);
+  const last = new Date(en); last.setHours(0,0,0,0);
+  if (e.all_day && last > cur) last.setDate(last.getDate() - 1);
+  return { cur, last };
 }
 
 // — Monatsansicht —
@@ -1994,10 +2006,7 @@ function renderCalMonth() {
   const dayMap = new Map(); // 'YYYY-MM-DD' → events[]
   for (const e of evs) {
     if (!e.start_time) continue;
-    const s = new Date(e.start_time);
-    const en = e.end_time ? new Date(e.end_time) : s;
-    const cur = new Date(s); cur.setHours(0,0,0,0);
-    const last = new Date(en); last.setHours(0,0,0,0);
+    const { cur, last } = eventDayBounds(e);
     while (cur <= last) {
       const k = ymd(cur);
       if (!dayMap.has(k)) dayMap.set(k, []);
@@ -2047,13 +2056,12 @@ function renderCalWeek(numDays) {
     return `<div class="${isToday?'today':''}">${d.toLocaleDateString('de-DE',{weekday:'short'})} · ${d.getDate()}.${d.getMonth()+1}.</div>`;
   }).join('');
 
-  // All-Day-Zeile
+  // All-Day-Zeile (DTEND bei Ganztagsterminen ist exklusiv)
   const adCells = cols.map(d => {
+    const dDay = new Date(d); dDay.setHours(0,0,0,0);
     const here = allDay.filter(e => {
-      const s = new Date(e.start_time); const en = e.end_time ? new Date(e.end_time) : s;
-      const ds = new Date(d); ds.setHours(0,0,0,0);
-      const de = new Date(d); de.setHours(23,59,59,999);
-      return s <= de && en >= ds;
+      const { cur, last } = eventDayBounds(e);
+      return dDay >= cur && dDay <= last;
     });
     return `<div class="cal-week-allday-cell">
       ${here.map(e => `<div class="cal-event" style="background:${eventColor(e)}" onclick="showEventDetail(${e.id})">${esc(e.title||'?')}</div>`).join('')}
@@ -2136,10 +2144,7 @@ function buildDayMap() {
   _calDayMap = new Map();
   for (const e of visibleEvents()) {
     if (!e.start_time) continue;
-    const s = new Date(e.start_time);
-    const en = e.end_time ? new Date(e.end_time) : s;
-    const cur = new Date(s); cur.setHours(0,0,0,0);
-    const last = new Date(en); last.setHours(0,0,0,0);
+    const { cur, last } = eventDayBounds(e);
     while (cur <= last) {
       const k = ymd(cur);
       if (!_calDayMap.has(k)) _calDayMap.set(k, []);
