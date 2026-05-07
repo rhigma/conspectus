@@ -594,6 +594,15 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
 .cal-mini-d.has-events::after{content:'';position:absolute;bottom:1px;left:50%;transform:translateX(-50%);width:3px;height:3px;border-radius:50%;background:var(--accent)}
 .cal-mini-d.today.has-events::after{background:#fff}
 
+/* Hover-Tooltip in Jahresansicht */
+.cal-tooltip{position:fixed;display:none;z-index:400;background:var(--paper);border:1px solid var(--border2);border-radius:var(--r);box-shadow:var(--shadow2);padding:10px 12px;min-width:200px;max-width:300px;pointer-events:none}
+[data-theme="dark"] .cal-tooltip{background:var(--paper2)}
+.cal-tooltip-date{font-size:10px;font-family:'IBM Plex Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);margin-bottom:6px}
+.cal-tooltip-row{display:flex;gap:6px;align-items:flex-start;padding:3px 0;font-size:11px;color:var(--ink)}
+.cal-tooltip-bar{width:2px;border-radius:2px;flex-shrink:0;align-self:stretch;min-height:14px;margin-top:2px}
+.cal-tooltip-text{flex:1;min-width:0}
+.cal-tooltip-time{font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--ink3)}
+
 /* Tag-Detail-Popover */
 .cal-popover-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:300;align-items:center;justify-content:center}
 .cal-popover-backdrop.visible{display:flex}
@@ -787,6 +796,9 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
     <div class="cal-popover-backdrop" id="cal-popover-backdrop" onclick="if(event.target===this)closeCalPopover()">
       <div class="cal-popover" id="cal-popover"></div>
     </div>
+
+    <!-- KALENDER HOVER-TOOLTIP -->
+    <div class="cal-tooltip" id="cal-tooltip"></div>
 
     <!-- BOOX-NOTIZEN -->
     <div class="view" id="v-boox">
@@ -1919,6 +1931,7 @@ function syncKalenderView() {
 
 function renderCalendar() {
   if (_cal._nowTimer) { clearInterval(_cal._nowTimer); _cal._nowTimer = null; }
+  const tip = document.getElementById('cal-tooltip'); if (tip) tip.style.display = 'none';
   document.getElementById('cal-title').textContent = calTitleText();
   const body = document.getElementById('cal-body');
   if (_cal.mode === 'month')      body.innerHTML = renderCalMonth();
@@ -2117,24 +2130,42 @@ function drawNowLine() {
 }
 
 // — Jahresansicht —
+let _calDayMap = new Map(); // 'YYYY-MM-DD' → events[]
+
+function buildDayMap() {
+  _calDayMap = new Map();
+  for (const e of visibleEvents()) {
+    if (!e.start_time) continue;
+    const s = new Date(e.start_time);
+    const en = e.end_time ? new Date(e.end_time) : s;
+    const cur = new Date(s); cur.setHours(0,0,0,0);
+    const last = new Date(en); last.setHours(0,0,0,0);
+    while (cur <= last) {
+      const k = ymd(cur);
+      if (!_calDayMap.has(k)) _calDayMap.set(k, []);
+      _calDayMap.get(k).push(e);
+      cur.setDate(cur.getDate()+1);
+    }
+  }
+}
+
 function renderCalYear() {
+  buildDayMap();
   const y = _cal.cursor.getFullYear();
   const today = new Date();
-  const evs = visibleEvents();
-  const evDays = new Set(evs.map(e => e.start_time ? ymd(new Date(e.start_time)) : null).filter(Boolean));
   const months = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
   let html = '<div class="cal-year-grid">';
   for (let m = 0; m < 12; m++) {
     html += `<div class="cal-year-month">
       <h4 onclick="calJumpToMonth(${y},${m})">${months[m]}</h4>
-      ${renderMiniMonth(y, m, today, evDays)}
+      ${renderMiniMonth(y, m, today)}
     </div>`;
   }
   html += '</div>';
   return html;
 }
 
-function renderMiniMonth(year, month, today, evDays) {
+function renderMiniMonth(year, month, today) {
   const first = new Date(year, month, 1);
   const start = startOfWeek(first);
   const heads = ['M','D','M','D','F','S','S'];
@@ -2144,12 +2175,58 @@ function renderMiniMonth(year, month, today, evDays) {
     const d = new Date(start); d.setDate(start.getDate() + i);
     const isCur = d.getMonth() === month;
     const isToday = sameDay(d, today);
-    const has = evDays.has(ymd(d));
-    if (i >= 35 && d.getMonth() !== month && !isCur) continue; // leere 6. Reihe ausblenden
-    html += `<div class="cal-mini-d ${isCur?'':'other'} ${isToday?'today':''} ${has?'has-events':''}" onclick="calJumpToDay(${d.getFullYear()},${d.getMonth()},${d.getDate()})">${d.getDate()}</div>`;
+    const k = ymd(d);
+    const has = _calDayMap.has(k);
+    if (i >= 35 && d.getMonth() !== month && !isCur) continue;
+    html += `<div class="cal-mini-d ${isCur?'':'other'} ${isToday?'today':''} ${has?'has-events':''}" data-day="${k}" onmouseenter="calTooltipShow(event,'${k}')" onmouseleave="calTooltipHide()" onclick="calJumpToDay(${d.getFullYear()},${d.getMonth()},${d.getDate()})">${d.getDate()}</div>`;
   }
   html += '</div>';
   return html;
+}
+
+function calTooltipShow(ev, dayKey) {
+  const events = _calDayMap.get(dayKey);
+  if (!events || !events.length) return;
+  const tip = document.getElementById('cal-tooltip');
+  const [y, m, d] = dayKey.split('-').map(Number);
+  const date = new Date(y, m-1, d);
+  const sorted = [...events].sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+  const rows = sorted.slice(0, 8).map(e => {
+    let timeStr;
+    if (e.all_day) timeStr = 'ganztägig';
+    else {
+      const s = new Date(e.start_time);
+      const en = e.end_time ? new Date(e.end_time) : null;
+      const t1 = s.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Berlin'});
+      const t2 = en ? en.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Berlin'}) : '';
+      timeStr = t2 ? `${t1}–${t2}` : t1;
+    }
+    return `<div class="cal-tooltip-row">
+      <div class="cal-tooltip-bar" style="background:${eventColor(e)}"></div>
+      <div class="cal-tooltip-text">
+        <div>${esc(e.title || '(ohne Titel)')}</div>
+        <div class="cal-tooltip-time">${esc(timeStr)}${e.location?' · '+esc(e.location):''}</div>
+      </div>
+    </div>`;
+  }).join('');
+  const more = sorted.length > 8 ? `<div class="cal-tooltip-time" style="margin-top:4px">+${sorted.length-8} weitere</div>` : '';
+  tip.innerHTML = `<div class="cal-tooltip-date">${date.toLocaleDateString('de-DE',{weekday:'long',day:'numeric',month:'long'})}</div>${rows}${more}`;
+  tip.style.display = 'block';
+  // Position: rechts neben der Zelle, ggf. an Viewport anpassen
+  const r = ev.currentTarget.getBoundingClientRect();
+  const tipR = tip.getBoundingClientRect();
+  let left = r.right + 8;
+  let top  = r.top;
+  if (left + tipR.width > window.innerWidth - 8) left = r.left - tipR.width - 8;
+  if (left < 8) left = 8;
+  if (top + tipR.height > window.innerHeight - 8) top = window.innerHeight - tipR.height - 8;
+  if (top < 8) top = 8;
+  tip.style.left = left + 'px';
+  tip.style.top  = top + 'px';
+}
+
+function calTooltipHide() {
+  document.getElementById('cal-tooltip').style.display = 'none';
 }
 
 function calJumpToMonth(y, m) {
