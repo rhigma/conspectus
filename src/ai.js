@@ -305,68 +305,71 @@ Antworte NUR mit JSON:
 // ── Notiz-Analyse (reMarkable / Foto) ─────────────────────────────────────────
 
 export async function notizAnalysieren(imageBase64, mediaType = 'image/jpeg') {
-  // PDF → PNG konvertieren
+  // Liste der Bild-Blocks für den Vision-Call (eines pro PDF-Seite)
+  let pages = [{ media_type: mediaType, data: imageBase64 }];
+
+  // PDF → PNG konvertieren (alle Seiten)
   if (mediaType === 'application/pdf') {
     try {
-      const { execSync, spawnSync } = await import('child_process');
-      const { writeFileSync: wfs, readFileSync: rfs, unlinkSync, existsSync } = await import('fs');
+      const { spawnSync } = await import('child_process');
+      const { writeFileSync: wfs, readFileSync: rfs, unlinkSync, readdirSync } = await import('fs');
       const { tmpdir } = await import('os');
-      const { join } = await import('path');
-      
+      const { join, dirname, basename } = await import('path');
+
       const tmpPdf = join(tmpdir(), `boox-${Date.now()}.pdf`);
       const tmpBase = join(tmpdir(), `boox-${Date.now()}`);
-      
+
       wfs(tmpPdf, Buffer.from(imageBase64, 'base64'));
-      
-      // Erste Seite als PNG exportieren (150 DPI)
-      spawnSync('pdftoppm', ['-r', '150', '-png', '-l', '3', tmpPdf, tmpBase]);
-      
-      // Erste verfügbare Seite laden – pdftoppm erzeugt -1.png, -2.png etc.
-      let pngBase64 = null;
-      const { readdirSync } = await import('fs');
-      const { dirname, basename } = await import('path');
+
+      // Alle Seiten als PNG exportieren (150 DPI)
+      spawnSync('pdftoppm', ['-r', '150', '-png', tmpPdf, tmpBase]);
+
       const tmpDir = dirname(tmpBase);
       const tmpPrefix = basename(tmpBase);
       const allFiles = readdirSync(tmpDir)
         .filter(fn => fn.startsWith(tmpPrefix) && fn.endsWith('.png'))
-        .sort();
-      if (allFiles.length > 0) {
-        const firstPng = join(tmpDir, allFiles[0]);
-        pngBase64 = rfs(firstPng).toString('base64');
-        allFiles.forEach(fn => { try { unlinkSync(join(tmpDir, fn)); } catch(e) {} });
-      }
-      try { unlinkSync(tmpPdf); } catch(e) {}
-      
-      if (pngBase64) {
-        imageBase64 = pngBase64;
-        mediaType = 'image/png';
-      } else {
-        throw new Error('PDF-Konvertierung fehlgeschlagen');
-      }
-    } catch(e) {
+        .sort((a, b) => {
+          // Numerisch sortieren: boox-…-1.png, …-2.png, …-10.png
+          const na = parseInt(a.match(/-(\d+)\.png$/)?.[1] || '0', 10);
+          const nb = parseInt(b.match(/-(\d+)\.png$/)?.[1] || '0', 10);
+          return na - nb;
+        });
+
+      pages = allFiles.map(fn => {
+        const full = join(tmpDir, fn);
+        const data = rfs(full).toString('base64');
+        try { unlinkSync(full); } catch (e) {}
+        return { media_type: 'image/png', data };
+      });
+
+      try { unlinkSync(tmpPdf); } catch (e) {}
+
+      if (pages.length === 0) throw new Error('PDF-Konvertierung lieferte keine Seiten');
+    } catch (e) {
       console.error('[notizAnalysieren] PDF-Konvertierung:', e.message);
       throw e;
     }
   }
+
   const vorgaenge = await query(
     'SELECT id, titel FROM vorgaenge WHERE status != ? ORDER BY updated_at DESC LIMIT 20',
     ['abgeschlossen']
   );
 
-  const response = await client.messages.create({
-    model: MODEL_SMART,
-    max_tokens: 1000,
-    messages: [{
-      role: 'user',
-      content: [
-        { type: 'image', source: { type: 'base64', media_type: mediaType, data: imageBase64 } },
-        { type: 'text', text: `Du analysierst eine handgeschriebene Notiz des Schulleiters.
+  const seitenHinweis = pages.length > 1
+    ? `Die Notiz besteht aus ${pages.length} Seiten (in Reihenfolge unten angehängt). Transkribiere alle Seiten in der Reihenfolge und extrahiere Aufgaben/Delegationen/Termine seitenübergreifend.`
+    : '';
+
+  const content = [
+    ...pages.map(p => ({ type: 'image', source: { type: 'base64', media_type: p.media_type, data: p.data } })),
+    { type: 'text', text: `Du analysierst eine handgeschriebene Notiz des Schulleiters.
+${seitenHinweis}
 
 Bestehende Vorgänge:
 ${vorgaenge.map(v => `- #${v.id}: ${v.titel}`).join('\n') || 'Keine'}
 
 Bitte:
-1. Transkribiere den handgeschriebenen Text vollständig
+1. Transkribiere den handgeschriebenen Text vollständig (bei mehreren Seiten alle, mit Seitenmarkern "--- Seite N ---")
 2. Erkenne zu welchem Vorgang die Notiz gehört (oder ob ein neuer Vorgang angelegt werden soll)
 3. Extrahiere: Aufgaben, Delegationen, Termine
 
@@ -379,16 +382,22 @@ Antworte mit JSON:
   "delegationen": [{"an":"[PERSON_1]","aufgabe":"...","deadline":"2026-05-15"}],
   "termine": [{"titel":"...","datum":"2026-05-07","uhrzeit":"14:00"}],
   "zusammenfassung": "..."
-}` }
-      ],
-    }],
+}` },
+  ];
+
+  const response = await client.messages.create({
+    model: MODEL_SMART,
+    max_tokens: 4000,
+    messages: [{ role: 'user', content }],
   });
 
   try {
     const text = response.content[0].text.trim().replace(/```json|```/g, '');
-    return JSON.parse(text);
+    const parsed = JSON.parse(text);
+    parsed.seiten = pages.length;
+    return parsed;
   } catch {
-    return { transkription: response.content[0].text, fehler: 'JSON-Parse fehlgeschlagen' };
+    return { transkription: response.content[0].text, seiten: pages.length, fehler: 'JSON-Parse fehlgeschlagen' };
   }
 }
 

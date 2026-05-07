@@ -234,6 +234,24 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
 .status-select.wartet{background:var(--goldl);color:var(--gold);border-color:transparent}
 .vorgang-deadline{font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace}
 .vorgang-deadline.ueberfaellig{color:var(--accent);font-weight:500}
+.boox-card{background:#fff;border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;transition:all .15s}
+[data-theme="dark"] .boox-card{background:var(--paper2)}
+.boox-head{display:flex;gap:12px;align-items:flex-start;cursor:pointer}
+.boox-head:hover .boox-titel{color:var(--accent)}
+.boox-titel{font-size:14px;font-weight:500;color:var(--ink);margin-bottom:4px;font-family:'IBM Plex Sans',sans-serif;word-break:break-word}
+.boox-meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace}
+.boox-summary{font-size:12px;color:var(--ink2);margin-top:6px;line-height:1.5}
+.boox-aside{text-align:right;flex-shrink:0;font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace}
+.boox-detail{margin-top:12px;padding-top:12px;border-top:1px dashed var(--border);font-size:12px;color:var(--ink2);line-height:1.6}
+.boox-detail h4{font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em;margin:10px 0 6px;font-family:'IBM Plex Mono',monospace;font-weight:500}
+.boox-detail h4:first-child{margin-top:0}
+.boox-detail ul{margin:0;padding-left:18px}
+.boox-detail .transkr{white-space:pre-wrap;background:var(--paper2);padding:10px 12px;border-radius:var(--r);font-family:'IBM Plex Sans',sans-serif;font-size:12px;color:var(--ink)}
+.boox-chip{font-size:9px;padding:2px 7px;border-radius:20px;font-family:'IBM Plex Mono',monospace;background:var(--paper3);color:var(--ink2)}
+.boox-chip.vorgang{background:var(--accentl);color:var(--accent);cursor:pointer}
+.boox-chip.vorgang:hover{filter:brightness(.95)}
+.boox-chip.error{background:#fde2e2;color:#a33}
+[data-theme="dark"] .boox-chip.error{background:#5a2424;color:#f3b8b8}
 .vorgang-aside{text-align:right;flex-shrink:0}
 .vorgang-deleg-count{font-size:11px;color:var(--accent);font-family:'IBM Plex Mono',monospace}
 .vorgang-eintrag-count{font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace}
@@ -528,6 +546,7 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
       <div class="nav-item active" id="n-dash" onclick="showView('dash')"><span class="nav-icon">⊞</span>Dashboard</div>
       <div class="nav-item" id="n-vorgaenge" onclick="showView('vorgaenge')"><span class="nav-icon">◈</span>Vorgänge</div>
       <div class="nav-item" id="n-emails" onclick="showView('emails')"><span class="nav-icon">✉</span>E-Mails</div>
+      <div class="nav-item" id="n-boox" onclick="showView('boox')"><span class="nav-icon">✎</span>Boox-Notizen</div>
       <div class="nav-item" id="n-chat" onclick="showView('chat')"><span class="nav-icon">◻</span>KI-Assistent</div>
       <div class="nav-item" id="n-einstellungen" onclick="showView('einstellungen')"><span class="nav-icon">⚙</span>Einstellungen</div>
     </div>
@@ -630,6 +649,17 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
         <button class="new-vorgang-btn" onclick="openNewVorgang()">+ Neuer Vorgang</button>
       </div>
       <div class="vorgaenge-list" id="vorgaenge-list"></div>
+    </div>
+
+    <!-- BOOX-NOTIZEN -->
+    <div class="view" id="v-boox">
+      <div class="vorgaenge-toolbar">
+        <h2>Boox-Notizen</h2>
+        <input class="search-input" id="boox-search" placeholder="Suchen…" oninput="renderBoox()" />
+        <button class="filter-btn" id="boox-sync-btn" onclick="syncBoox()">↺ Jetzt synchronisieren</button>
+        <span id="boox-count" style="font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace"></span>
+      </div>
+      <div id="boox-list" class="vorgaenge-list"><div class="loading-row"><div class="spin"></div>Lade…</div></div>
     </div>
 
     <!-- E-MAIL VERWALTUNG -->
@@ -1182,6 +1212,7 @@ function showView(v) {
   if (v === 'dash') { loadStats(); loadDashboard(); }
   if (v === 'einstellungen') loadEinstellungen();
   if (v === 'emails') loadEmailsView();
+  if (v === 'boox') loadBoox();
 }
 
 // ── STATS ──────────────────────────────────────────────────────────────────────
@@ -2780,6 +2811,125 @@ function toggleEmailsErledigt() {
   btn.classList.toggle('active', !_emlNurAktiv);
   _emlThema = null;
   loadEmailsView();
+}
+
+// ── BOOX-NOTIZEN ──────────────────────────────────────────────────────────────
+let _booxDaten = [];
+const _booxOpen = new Set();
+
+function tryParseBoox(json) {
+  if (!json) return null;
+  try { return JSON.parse(json); } catch(_) { return null; }
+}
+
+async function loadBoox() {
+  const list = document.getElementById('boox-list');
+  list.innerHTML = '<div class="loading-row"><div class="spin"></div>Lade…</div>';
+  try {
+    _booxDaten = await req('GET', '/boox/notizen?limit=100');
+    renderBoox();
+  } catch(e) {
+    list.innerHTML = '<div class="empty">Fehler: ' + esc(e.message) + '</div>';
+  }
+}
+
+function renderBoox() {
+  const list = document.getElementById('boox-list');
+  const cnt = document.getElementById('boox-count');
+  const q = (document.getElementById('boox-search')?.value || '').toLowerCase();
+
+  let rows = _booxDaten;
+  if (q) {
+    rows = rows.filter(r => {
+      const ki = tryParseBoox(r.inhalt) || {};
+      return (r.titel || '').toLowerCase().includes(q)
+        || (ki.transkription || '').toLowerCase().includes(q)
+        || (ki.zusammenfassung || '').toLowerCase().includes(q)
+        || (r.vorgang_titel || '').toLowerCase().includes(q);
+    });
+  }
+
+  cnt.textContent = rows.length + ' Notizen';
+
+  if (!rows.length) {
+    list.innerHTML = '<div class="empty"><div class="empty-icon">✎</div>Noch keine verarbeiteten Boox-Notizen</div>';
+    return;
+  }
+
+  list.innerHTML = rows.map(r => {
+    const ki = tryParseBoox(r.inhalt) || {};
+    const filename = (r.titel || '').replace(/^Boox:\s*/, '');
+    const open = _booxOpen.has(r.id);
+    const fehler = ki.fehler;
+    const seiten = ki.seiten;
+    const aufg = (ki.aufgaben || []).length;
+    const deleg = (ki.delegationen || []).length;
+    const term = (ki.termine || []).length;
+
+    const meta = [
+      seiten ? `${seiten} S.` : '',
+      aufg ? `${aufg} Aufgabe${aufg!==1?'n':''}` : '',
+      deleg ? `${deleg} Delegation${deleg!==1?'en':''}` : '',
+      term ? `${term} Termin${term!==1?'e':''}` : '',
+    ].filter(Boolean).join(' · ');
+
+    const detail = open ? `
+      <div class="boox-detail">
+        ${ki.zusammenfassung ? `<h4>Zusammenfassung</h4><div>${esc(ki.zusammenfassung)}</div>` : ''}
+        ${ki.transkription ? `<h4>Transkription</h4><div class="transkr">${esc(ki.transkription)}</div>` : ''}
+        ${aufg ? `<h4>Aufgaben</h4><ul>${ki.aufgaben.map(a => `<li>${esc(a)}</li>`).join('')}</ul>` : ''}
+        ${deleg ? `<h4>Delegationen</h4><ul>${ki.delegationen.map(d => `<li><b>${esc(d.an||'?')}</b>: ${esc(d.aufgabe||'')}${d.deadline?` <span style="color:var(--ink3)">(bis ${esc(d.deadline)})</span>`:''}</li>`).join('')}</ul>` : ''}
+        ${term ? `<h4>Termine</h4><ul>${ki.termine.map(t => `<li>${esc(t.titel||'')} – ${esc(t.datum||'')}${t.uhrzeit?` ${esc(t.uhrzeit)}`:''}</li>`).join('')}</ul>` : ''}
+        ${fehler ? `<h4>Hinweis</h4><div>${esc(fehler)}</div>` : ''}
+        ${r.datei_pfad ? `<h4>Quelldatei</h4><div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink3);word-break:break-all">${esc(r.datei_pfad)}</div>` : ''}
+      </div>` : '';
+
+    const vorgangChip = r.vorgang_id
+      ? `<span class="boox-chip vorgang" onclick="event.stopPropagation();openVorgang(${r.vorgang_id})">◈ ${esc(r.vorgang_titel || '#'+r.vorgang_id)}</span>`
+      : '<span class="boox-chip">– kein Vorgang</span>';
+
+    return `
+      <div class="boox-card">
+        <div class="boox-head" onclick="toggleBoox(${r.id})">
+          <div style="flex:1;min-width:0">
+            <div class="boox-titel">✎ ${esc(filename || 'Notiz')}</div>
+            <div class="boox-meta">
+              ${vorgangChip}
+              ${meta ? `<span>${meta}</span>` : ''}
+              ${fehler ? '<span class="boox-chip error">Fehler</span>' : ''}
+            </div>
+            ${ki.zusammenfassung && !open ? `<div class="boox-summary">${esc(ki.zusammenfassung)}</div>` : ''}
+          </div>
+          <div class="boox-aside">
+            <div>${fmtDate(r.created_at)}</div>
+            <div style="margin-top:4px">${open ? '▾' : '▸'}</div>
+          </div>
+        </div>
+        ${detail}
+      </div>`;
+  }).join('');
+}
+
+function toggleBoox(id) {
+  if (_booxOpen.has(id)) _booxOpen.delete(id); else _booxOpen.add(id);
+  renderBoox();
+}
+
+async function syncBoox() {
+  const btn = document.getElementById('boox-sync-btn');
+  const orig = btn.textContent;
+  btn.textContent = '↺ Synchronisiere…';
+  btn.disabled = true;
+  try {
+    const r = await req('POST', '/boox/sync');
+    toast(`Boox-Sync: ${r.verarbeitet} neue Notiz${r.verarbeitet===1?'':'en'} verarbeitet`);
+    await loadBoox();
+  } catch(e) {
+    toast('Boox-Sync fehlgeschlagen: ' + e.message, 'error');
+  } finally {
+    btn.textContent = orig;
+    btn.disabled = false;
+  }
 }
 
 // ── VOLLTEXT-SUCHE ─────────────────────────────────────────────────────────────

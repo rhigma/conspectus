@@ -8,7 +8,7 @@ import { fileURLToPath } from 'url';
 import { initSchema, query, queryOne } from './db.js';
 import { syncAllAccounts, moveToErledigt, syncErledigtStatus, vorgangFolderPath, renameVorgangFolderOnAllAccounts } from './imap.js';
 import { chat, executeAction, getTokenStats, emailEinordnen, notizAnalysieren, morgenbriefing, naturalSearchQuery } from './ai.js';
-import { ncMkdir, neueRemarkableNotizen, remarkableVerarbeitet, ncDownload, vorgangOrdner } from './nextcloud.js';
+import { ncMkdir, neueBooxNotizen, booxVerarbeitet, ncDownload, vorgangOrdner } from './nextcloud.js';
 import { createCalDavEvent, deleteCalDavEvent } from './caldav.js';
 import { randomUUID } from 'crypto';
 
@@ -592,14 +592,14 @@ async function booxNotizVerarbeiten(pfad) {
     } catch (e) { console.error('[Boox] Delegation-Fehler:', e.message); }
   }
 
-  await remarkableVerarbeitet(pfad);
+  await booxVerarbeitet(pfad);
   console.log(`[Boox] ${pfad.split('/').pop()} → Vorgang #${vorgangId}, ${terminCount} Termine, ${delegCount} Delegationen`);
   return { pfad, vorgangId, termine: terminCount, delegationen: delegCount, analyse };
 }
 
 app.post('/boox/sync', async (req, res) => {
   try {
-    const notizen = await neueRemarkableNotizen();
+    const notizen = await neueBooxNotizen();
     const ergebnisse = [];
     for (const pfad of notizen) {
       ergebnisse.push(await booxNotizVerarbeiten(pfad));
@@ -613,6 +613,24 @@ app.get('/boox/status', async (req, res) => {
     const eintraege = await query(
       `SELECT id, vorgang_id, titel, inhalt, datei_pfad, created_at
        FROM vorgang_eintraege WHERE titel LIKE 'Boox:%' ORDER BY created_at DESC LIMIT 5`
+    );
+    res.json(eintraege);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Übersicht: alle verarbeiteten Boox-Notizen + verlinkter Vorgang
+app.get('/boox/notizen', async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const eintraege = await query(
+      `SELECT e.id, e.vorgang_id, e.titel, e.inhalt, e.datei_pfad, e.created_at,
+              v.titel AS vorgang_titel, v.status AS vorgang_status
+         FROM vorgang_eintraege e
+         LEFT JOIN vorgaenge v ON v.id = e.vorgang_id
+        WHERE e.titel LIKE 'Boox:%'
+        ORDER BY e.created_at DESC
+        LIMIT ?`,
+      [limit]
     );
     res.json(eintraege);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -649,9 +667,9 @@ if (!global._cronStarted) {
   // Boox-Notizen (stündlich zur vollen Stunde)
   cron.schedule('0 * * * *', async () => {
     try {
-      const notizen = await neueRemarkableNotizen();
+      const notizen = await neueBooxNotizen();
       for (const pfad of notizen) await booxNotizVerarbeiten(pfad);
-    } catch (e) { /* Boox optional */ }
+    } catch (e) { console.error('[Boox] Cron-Fehler:', e.message); }
   });
 
   // Kalender-Sync (stündlich, versetzt zu Boox)
