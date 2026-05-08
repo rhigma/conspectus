@@ -665,7 +665,7 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
       <div class="nav-item" id="n-vorgaenge" onclick="showView('vorgaenge')"><span class="nav-icon">◈</span>Vorgänge</div>
       <div class="nav-item" id="n-emails" onclick="showView('emails')"><span class="nav-icon">✉</span>E-Mails</div>
       <div class="nav-item" id="n-kalender" onclick="showView('kalender')"><span class="nav-icon">◷</span>Kalender</div>
-      <div class="nav-item" id="n-boox" onclick="showView('boox')"><span class="nav-icon">✎</span>Boox-Notizen</div>
+      <div class="nav-item" id="n-boox" onclick="showView('boox')"><span class="nav-icon">✎</span>PDF-Notizen</div>
       <div class="nav-item" id="n-chat" onclick="showView('chat')"><span class="nav-icon">◻</span>KI-Assistent</div>
       <div class="nav-item" id="n-einstellungen" onclick="showView('einstellungen')"><span class="nav-icon">⚙</span>Einstellungen</div>
     </div>
@@ -803,7 +803,7 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
     <!-- BOOX-NOTIZEN -->
     <div class="view" id="v-boox">
       <div class="vorgaenge-toolbar">
-        <h2>Boox-Notizen</h2>
+        <h2>PDF-Notizen</h2>
         <input class="search-input" id="boox-search" placeholder="Suchen…" oninput="renderBoox()" />
         <button class="filter-btn" id="boox-sync-btn" onclick="syncBoox()">↺ Jetzt synchronisieren</button>
         <span id="boox-count" style="font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace"></span>
@@ -1059,7 +1059,7 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
             · Briefing täglich 6:30 Uhr<br>
             · Überfällige Delegationen täglich 8:00 Uhr<br>
             · Termin-Erinnerungen 30 Min. vorher<br>
-            · Neue Boox-Notizen nach Verarbeitung
+            · Neue PDF-Notizen nach Verarbeitung
           </div>
         </div>
 
@@ -1123,20 +1123,14 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
           </div>
         </div>
 
-        <!-- NEXTCLOUD / BOOX -->
+        <!-- NEXTCLOUD -->
         <div class="card wide">
-          <div class="card-header"><span class="card-title">✎ Boox / Nextcloud</span></div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-            <div>
-              <div style="font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--ink3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Nextcloud-URL</div>
-              <div style="font-size:12px;color:var(--ink2);font-family:'IBM Plex Mono',monospace" id="s-nc-url">–</div>
-            </div>
-            <div>
-              <div style="font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--ink3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Boox-Ordner</div>
-              <div style="font-size:12px;color:var(--ink2);font-family:'IBM Plex Mono',monospace" id="s-boox-pfad">–</div>
-            </div>
+          <div class="card-header"><span class="card-title">☁ Nextcloud</span></div>
+          <div>
+            <div style="font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--ink3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Nextcloud-URL</div>
+            <div style="font-size:12px;color:var(--ink2);font-family:'IBM Plex Mono',monospace" id="s-nc-url">–</div>
           </div>
-          <button onclick="booxSyncManuell()" style="margin-top:12px;padding:7px 14px;background:none;border:1px solid var(--border);border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:10px;cursor:pointer;color:var(--ink2)">↺ Boox-Notizen jetzt prüfen</button>
+          <button onclick="booxSyncManuell()" style="margin-top:12px;padding:7px 14px;background:none;border:1px solid var(--border);border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:10px;cursor:pointer;color:var(--ink2)">↺ PDF-Notizen jetzt prüfen</button>
         </div>
 
       </div>
@@ -3011,7 +3005,6 @@ async function loadSystemInfo() {
           </div>`).join('')}
       </div>`;
     document.getElementById('s-nc-url').textContent = cfg.nc_url || '–';
-    document.getElementById('s-boox-pfad').textContent = cfg.boox_pfad || '–';
   } catch(e) {}
 }
 
@@ -3663,7 +3656,7 @@ function renderBoox() {
   cnt.textContent = rows.length + ' Notizen';
 
   if (!rows.length) {
-    list.innerHTML = '<div class="empty"><div class="empty-icon">✎</div>Noch keine verarbeiteten Boox-Notizen</div>';
+    list.innerHTML = '<div class="empty"><div class="empty-icon">✎</div>Noch keine verarbeiteten PDF-Notizen</div>';
     return;
   }
 
@@ -3841,14 +3834,22 @@ async function syncBoox() {
   btn.disabled = true;
   try {
     const r = await req('POST', '/boox/sync');
-    toast(`Boox-Sync: ${r.verarbeitet} neue Notiz${r.verarbeitet===1?'':'en'} verarbeitet`);
+    toast(`Notiz-Sync: ${r.verarbeitet} neue Notiz${r.verarbeitet===1?'':'en'} verarbeitet`);
     await loadBoox();
   } catch(e) {
-    toast('Boox-Sync fehlgeschlagen: ' + e.message, 'error');
+    toast('Notiz-Sync fehlgeschlagen: ' + e.message, 'error');
   } finally {
     btn.textContent = orig;
     btn.disabled = false;
   }
+}
+
+// Sync-Trigger aus den Einstellungen (ohne View-Wechsel).
+async function booxSyncManuell() {
+  try {
+    const r = await req('POST', '/boox/sync');
+    toast(`Notiz-Sync: ${r.verarbeitet} neue Notiz${r.verarbeitet===1?'':'en'} verarbeitet`, 'ok');
+  } catch(e) { toast('Notiz-Sync fehlgeschlagen: ' + e.message, 'err'); }
 }
 
 // ── VOLLTEXT-SUCHE ─────────────────────────────────────────────────────────────

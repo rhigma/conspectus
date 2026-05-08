@@ -1366,7 +1366,6 @@ app.get('/system/config', async (req, res) => {
       briefing_time: `${String(bt.h).padStart(2,'0')}:${String(bt.m).padStart(2,'0')}`,
       token_stats: tokenStats,
       nc_url: process.env.NC_URL,
-      boox_pfad: '/onyx/GoColor7_2/Notizblöcke',
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
