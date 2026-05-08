@@ -165,9 +165,15 @@ export async function remarkableVerarbeitet(path) {
 export const BOOX_PFAD = '/onyx/GoColor7_2/Notizblöcke';
 export const BOOX_VERARBEITET = '/onyx/GoColor7_2/Notizblöcke_verarbeitet';
 
-export async function neueBooxNotizen() {
+// Standard-Zielpfad ableiten, wenn kein expliziter Ziel-Ordner gesetzt ist.
+export function defaultZielOrdner(quelle) {
+  const norm = quelle.replace(/\/+$/, '');
+  return norm + '_verarbeitet';
+}
+
+export async function neueBooxNotizen(quellOrdner = BOOX_PFAD) {
   try {
-    const dateien = await ncList(BOOX_PFAD);
+    const dateien = await ncList(quellOrdner);
     return dateien
       .filter(p => p.toLowerCase().endsWith('.pdf'))
       .map(p => {
@@ -177,12 +183,13 @@ export async function neueBooxNotizen() {
         return idx >= 0 ? p.slice(idx + marker.length) : p;
       });
   } catch (e) {
-    console.warn('[Boox] Ordner nicht lesbar:', e.message);
+    console.warn('[Boox] Ordner nicht lesbar:', quellOrdner, '–', e.message);
     return [];
   }
 }
 
-export async function booxVerarbeitet(pfad) {
+export async function booxVerarbeitet(pfad, zielOrdner) {
+  const ziel_basis = zielOrdner || BOOX_VERARBEITET;
   const dateiname = pfad.split('/').pop();
   // Zeitstempel zwischen Stamm und Endung einfügen, damit Re-Syncs derselben
   // Notiz nicht stumm überschreiben: "Studientag.pdf" → "Studientag.2026-05-07T2318.pdf"
@@ -193,9 +200,9 @@ export async function booxVerarbeitet(pfad) {
   // → 20260507T2318
   const stamp = `${ts.slice(0,4)}-${ts.slice(4,6)}-${ts.slice(6,8)}T${ts.slice(9,13)}`;
   const versioniert = `${stamm}.${stamp}${ext}`;
-  const ziel = `${BOOX_VERARBEITET}/${versioniert}`;
+  const ziel = `${ziel_basis}/${versioniert}`;
   try {
-    await ncMkdir(BOOX_VERARBEITET);
+    await ncMkdir(ziel_basis);
     // Pfad-Segmente einzeln enkodieren (Umlaute!)
     const encPfad = pfad.split('/').map(s => encodeURIComponent(s)).join('/');
     const encZiel = ziel.split('/').map(s => encodeURIComponent(s)).join('/');
@@ -209,6 +216,21 @@ export async function booxVerarbeitet(pfad) {
     return res.ok;
   } catch(e) {
     console.warn('[Boox] Verschieben fehlgeschlagen:', e.message);
+    return false;
+  }
+}
+
+// Existenz-Prüfung eines Ordners auf Nextcloud (HEAD/PROPFIND).
+export async function ncOrdnerExistiert(pfad) {
+  try {
+    const encPath = pfad.split('/').map(s => encodeURIComponent(s)).join('/');
+    const url = `${NC_URL()}/remote.php/dav/files/${NC_USER()}${encPath}`;
+    const res = await fetch(url, {
+      method: 'PROPFIND',
+      headers: { Authorization: authHeader(), Depth: '0' },
+    });
+    return res.ok || res.status === 207;
+  } catch (_) {
     return false;
   }
 }

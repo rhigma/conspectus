@@ -974,6 +974,25 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
           </select>
         </div>
 
+        <!-- PDF-NOTIZ-ORDNER -->
+        <div class="card">
+          <div class="card-header"><span class="card-title">📓 PDF-Notiz-Ordner</span></div>
+          <div style="font-size:11px;color:var(--ink2);line-height:1.65;margin-bottom:10px">
+            Nextcloud-Ordner, die stündlich nach neuen PDF-Notizen durchsucht werden.
+            Verarbeitete Dateien werden in den Ziel-Ordner verschoben (wird automatisch angelegt).
+          </div>
+          <div id="s-pdfnotiz-list"><div class="loading-row"><div class="spin"></div>Lade…</div></div>
+          <div style="margin-top:12px;padding-top:12px;border-top:1px dashed var(--border)">
+            <div style="font-size:10px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.1em;color:var(--ink3);margin-bottom:6px">Neuer Ordner</div>
+            <div style="display:grid;gap:6px">
+              <input id="s-pdfnotiz-label" placeholder="Bezeichnung (z. B. iPad Notizen)" style="padding:7px 8px;border:1px solid var(--border);border-radius:var(--r);font-family:'IBM Plex Sans',sans-serif;font-size:12px;background:var(--paper);color:var(--ink)"/>
+              <input id="s-pdfnotiz-quelle" placeholder="/pfad/zu/ueberwachtem/ordner" style="padding:7px 8px;border:1px solid var(--border);border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:11px;background:var(--paper);color:var(--ink)"/>
+              <input id="s-pdfnotiz-ziel" placeholder="Ziel (leer = automatisch …_verarbeitet)" style="padding:7px 8px;border:1px solid var(--border);border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:11px;background:var(--paper);color:var(--ink)"/>
+              <button onclick="addPdfNotizOrdner()" style="padding:8px 12px;background:var(--accent);color:#fff;border:none;border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:11px;cursor:pointer">+ Hinzufügen</button>
+            </div>
+          </div>
+        </div>
+
         <!-- BRIEFING-ZEIT -->
         <div class="card">
           <div class="card-header"><span class="card-title">☀ Morgen-Briefing</span></div>
@@ -2776,7 +2795,68 @@ async function loadEinstellungen() {
     loadTodoKalenderSetting(),
     loadPushoverSettings(),
     loadBriefingTime(),
+    loadPdfNotizOrdner(),
   ]);
+}
+
+let _pdfNotizOrdner = [];
+
+async function loadPdfNotizOrdner() {
+  const el = document.getElementById('s-pdfnotiz-list');
+  try {
+    _pdfNotizOrdner = await req('GET', '/pdf-notiz-ordner');
+    if (!_pdfNotizOrdner.length) {
+      el.innerHTML = '<div style="font-size:11px;color:var(--ink3);font-family:\'IBM Plex Mono\',monospace;padding:8px 0">Keine Ordner konfiguriert.</div>';
+      return;
+    }
+    el.innerHTML = _pdfNotizOrdner.map((o, i) => `
+      <div style="display:flex;align-items:flex-start;gap:8px;padding:8px;border:1px solid var(--border);border-radius:var(--r);margin-bottom:6px">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:2px">${esc(o.label || '')}</div>
+          <div style="font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--ink2);word-break:break-all">↘ ${esc(o.quelle)}</div>
+          <div style="font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--ink3);word-break:break-all">→ ${esc(o.ziel)}</div>
+        </div>
+        <button onclick="removePdfNotizOrdner(${i})" title="Entfernen" style="padding:4px 8px;background:transparent;color:var(--ink3);border:1px solid var(--border);border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:10px;cursor:pointer">✕</button>
+      </div>`).join('');
+  } catch(e) {
+    el.innerHTML = `<div style="font-size:11px;color:var(--accent);font-family:'IBM Plex Mono',monospace;padding:8px 0">Fehler: ${esc(e.message)}</div>`;
+  }
+}
+
+async function addPdfNotizOrdner() {
+  const label = document.getElementById('s-pdfnotiz-label').value.trim();
+  const quelle = document.getElementById('s-pdfnotiz-quelle').value.trim();
+  const ziel = document.getElementById('s-pdfnotiz-ziel').value.trim();
+  if (!quelle) { toast('Bitte Quell-Pfad eingeben', 'err'); return; }
+  if (!quelle.startsWith('/')) { toast('Pfad muss mit / beginnen', 'err'); return; }
+  if (ziel && !ziel.startsWith('/')) { toast('Zielpfad muss mit / beginnen', 'err'); return; }
+  try {
+    const pruef = await req('POST', '/pdf-notiz-ordner/pruefen', { pfad: quelle });
+    if (!pruef.exists) {
+      if (!confirm(`Ordner "${quelle}" wurde auf Nextcloud nicht gefunden. Trotzdem hinzufügen?`)) return;
+    }
+    const neu = [..._pdfNotizOrdner, { label, quelle, ziel }];
+    const result = await req('PUT', '/pdf-notiz-ordner', { ordner: neu });
+    _pdfNotizOrdner = result.ordner || neu;
+    document.getElementById('s-pdfnotiz-label').value = '';
+    document.getElementById('s-pdfnotiz-quelle').value = '';
+    document.getElementById('s-pdfnotiz-ziel').value = '';
+    toast('Ordner hinzugefügt ✓', 'ok');
+    loadPdfNotizOrdner();
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+}
+
+async function removePdfNotizOrdner(idx) {
+  const o = _pdfNotizOrdner[idx];
+  if (!o) return;
+  if (!confirm(`Ordner "${o.label || o.quelle}" wirklich aus der Überwachung entfernen? (Die Dateien selbst bleiben unangetastet.)`)) return;
+  try {
+    const neu = _pdfNotizOrdner.filter((_, i) => i !== idx);
+    const result = await req('PUT', '/pdf-notiz-ordner', { ordner: neu });
+    _pdfNotizOrdner = result.ordner || neu;
+    toast('Ordner entfernt ✓', 'ok');
+    loadPdfNotizOrdner();
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
 }
 
 async function loadBriefingTime() {

@@ -8,7 +8,7 @@ import { fileURLToPath } from 'url';
 import { initSchema, query, queryOne } from './db.js';
 import { syncAllAccounts, moveToErledigt, syncErledigtStatus, vorgangFolderPath, renameVorgangFolderOnAllAccounts } from './imap.js';
 import { chat, executeAction, getTokenStats, emailEinordnen, notizAnalysieren, morgenbriefing, naturalSearchQuery } from './ai.js';
-import { ncMkdir, neueBooxNotizen, booxVerarbeitet, ncDownload, vorgangOrdner } from './nextcloud.js';
+import { ncMkdir, neueBooxNotizen, booxVerarbeitet, ncDownload, vorgangOrdner, defaultZielOrdner, ncOrdnerExistiert, BOOX_PFAD, BOOX_VERARBEITET } from './nextcloud.js';
 import { createCalDavEvent, deleteCalDavEvent } from './caldav.js';
 import { randomUUID } from 'crypto';
 
@@ -533,7 +533,7 @@ const normVorschlaege = (analyse) => ({
   termine: (analyse.termine || []).map(t => normItem(t)),
 });
 
-async function booxNotizVerarbeiten(pfad) {
+async function booxNotizVerarbeiten(pfad, zielOrdner) {
   const buffer = await ncDownload(pfad);
   const dateiname = pfad.split('/').pop();
 
@@ -565,7 +565,7 @@ async function booxNotizVerarbeiten(pfad) {
     altAnalyse.seiten_hashes = analyse.seiten_hashes;
     altAnalyse.seiten = analyse.seiten;
     await query('UPDATE vorgang_eintraege SET inhalt = ? WHERE id = ?', [JSON.stringify(altAnalyse), existing.id]);
-    await booxVerarbeitet(pfad);
+    await booxVerarbeitet(pfad, zielOrdner);
     console.log(`[Boox] ${dateiname} → keine neuen Seiten, skip`);
     return { pfad, vorgangId: existing.vorgang_id, neue_seiten: 0, vorschlaege: 0 };
   }
@@ -594,7 +594,7 @@ async function booxNotizVerarbeiten(pfad) {
       'UPDATE vorgang_eintraege SET inhalt = ?, datei_pfad = ? WHERE id = ?',
       [JSON.stringify(altAnalyse), pfad, existing.id]
     );
-    await booxVerarbeitet(pfad);
+    await booxVerarbeitet(pfad, zielOrdner);
     const offen = neueVorschlaege.aufgaben.length + neueVorschlaege.delegationen.length + neueVorschlaege.termine.length;
     console.log(`[Boox] ${dateiname} → Vorgang #${existing.vorgang_id}, +${analyse.neue_seiten} Seiten, +${offen} Vorschläge`);
     return { pfad, vorgangId: existing.vorgang_id, neue_seiten: analyse.neue_seiten, vorschlaege: offen, analyse: altAnalyse };
@@ -630,15 +630,87 @@ async function booxNotizVerarbeiten(pfad) {
   return { pfad, vorgangId, neue_seiten: analyse.seiten, vorschlaege: offen, analyse: neueVorschlaege };
 }
 
+// Liest die konfigurierten PDF-Notiz-Ordner aus settings; fällt auf den
+// historischen Boox-Default zurück, falls noch keine Konfiguration existiert.
+async function getPdfNotizOrdner() {
+  try {
+    const row = await queryOne("SELECT value FROM settings WHERE `key` = 'pdf_notiz_ordner'");
+    if (row?.value) {
+      const parsed = JSON.parse(row.value);
+      if (Array.isArray(parsed) && parsed.length) {
+        return parsed
+          .filter(o => o && typeof o.quelle === 'string' && o.quelle.trim())
+          .map(o => ({
+            quelle: o.quelle.trim(),
+            ziel: (o.ziel || '').trim() || defaultZielOrdner(o.quelle.trim()),
+            label: (o.label || '').trim() || o.quelle.trim().split('/').filter(Boolean).pop(),
+          }));
+      }
+    }
+  } catch (e) {
+    console.warn('[PDF-Notizen] Settings parse-Fehler:', e.message);
+  }
+  return [{ quelle: BOOX_PFAD, ziel: BOOX_VERARBEITET, label: 'Boox' }];
+}
+
 app.post('/boox/sync', async (req, res) => {
   try {
-    const notizen = await neueBooxNotizen();
+    const ordner = await getPdfNotizOrdner();
     const ergebnisse = [];
-    for (const pfad of notizen) {
-      ergebnisse.push(await booxNotizVerarbeiten(pfad));
+    for (const o of ordner) {
+      const notizen = await neueBooxNotizen(o.quelle);
+      for (const pfad of notizen) {
+        ergebnisse.push(await booxNotizVerarbeiten(pfad, o.ziel));
+      }
     }
     res.json({ verarbeitet: ergebnisse.length, ergebnisse });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// CRUD für PDF-Notiz-Ordner: Liste lesen, ergänzen, entfernen.
+app.get('/pdf-notiz-ordner', async (req, res) => {
+  try {
+    const ordner = await getPdfNotizOrdner();
+    res.json(ordner);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/pdf-notiz-ordner', async (req, res) => {
+  try {
+    const list = Array.isArray(req.body?.ordner) ? req.body.ordner : null;
+    if (!list) return res.status(400).json({ error: 'Erwarte { ordner: [...] }' });
+    const sauber = [];
+    for (const o of list) {
+      const quelle = (o?.quelle || '').trim();
+      if (!quelle.startsWith('/')) {
+        return res.status(400).json({ error: `Pfad muss mit / beginnen: "${quelle}"` });
+      }
+      const ziel = (o?.ziel || '').trim() || defaultZielOrdner(quelle);
+      if (!ziel.startsWith('/')) {
+        return res.status(400).json({ error: `Zielpfad muss mit / beginnen: "${ziel}"` });
+      }
+      if (ziel === quelle) {
+        return res.status(400).json({ error: `Quell- und Zielordner müssen sich unterscheiden: "${quelle}"` });
+      }
+      const label = (o?.label || '').trim() || quelle.split('/').filter(Boolean).pop();
+      sauber.push({ quelle, ziel, label });
+    }
+    await query(
+      'INSERT INTO settings (`key`, value) VALUES (?,?) ON DUPLICATE KEY UPDATE value = VALUES(value)',
+      ['pdf_notiz_ordner', JSON.stringify(sauber)]
+    );
+    res.json({ ok: true, ordner: sauber });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Prüft, ob ein Quellordner auf Nextcloud existiert (für UI-Validierung).
+app.post('/pdf-notiz-ordner/pruefen', async (req, res) => {
+  try {
+    const pfad = (req.body?.pfad || '').trim();
+    if (!pfad.startsWith('/')) return res.status(400).json({ ok: false, error: 'Pfad muss mit / beginnen' });
+    const exists = await ncOrdnerExistiert(pfad);
+    res.json({ ok: true, exists });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
 app.get('/boox/status', async (req, res) => {
@@ -828,8 +900,11 @@ if (!global._cronStarted) {
   // Boox-Notizen (stündlich zur vollen Stunde)
   cron.schedule('0 * * * *', async () => {
     try {
-      const notizen = await neueBooxNotizen();
-      for (const pfad of notizen) await booxNotizVerarbeiten(pfad);
+      const ordner = await getPdfNotizOrdner();
+      for (const o of ordner) {
+        const notizen = await neueBooxNotizen(o.quelle);
+        for (const pfad of notizen) await booxNotizVerarbeiten(pfad, o.ziel);
+      }
     } catch (e) { console.error('[Boox] Cron-Fehler:', e.message); }
   });
 
