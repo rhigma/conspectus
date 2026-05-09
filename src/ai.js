@@ -258,6 +258,63 @@ export async function chat({ history = [], text, images = [], smart = false }) {
   };
 }
 
+// ── PDF-Anhang-Zusammenfassung ────────────────────────────────────────────────
+
+// Extrahiert Text aus einem PDF via `pdftotext` (poppler) — ohne Vision-Call,
+// weil bei Schul-Schreiben fast immer durchsuchbarer Text vorhanden ist.
+async function extrahierePdfText(buffer) {
+  const { spawnSync } = await import('child_process');
+  const { writeFileSync, readFileSync, unlinkSync } = await import('fs');
+  const { tmpdir } = await import('os');
+  const { join } = await import('path');
+  const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const tmpPdf = join(tmpdir(), `anh-${stamp}.pdf`);
+  const tmpTxt = join(tmpdir(), `anh-${stamp}.txt`);
+  try {
+    writeFileSync(tmpPdf, buffer);
+    const r = spawnSync('pdftotext', ['-layout', '-q', tmpPdf, tmpTxt]);
+    if (r.status !== 0) return '';
+    const text = readFileSync(tmpTxt, 'utf8');
+    return text.replace(/\s+\n/g, '\n').trim();
+  } catch (e) {
+    return '';
+  } finally {
+    try { unlinkSync(tmpPdf); } catch (_) {}
+    try { unlinkSync(tmpTxt); } catch (_) {}
+  }
+}
+
+// Liefert eine knappe Zusammenfassung eines E-Mail-Anhangs für die KI-Einordnung.
+// Aktuell nur PDFs (mit durchsuchbarem Text). Bei Bild-PDFs / anderen Typen → null.
+export async function anhangZusammenfassen(buffer, mediaType, filename = '') {
+  if (mediaType !== 'application/pdf') return null;
+  const text = await extrahierePdfText(buffer);
+  if (!text || text.length < 50) return null;
+  const auszug = text.slice(0, 6000);
+  const prompt = `Du erhältst den Text eines PDF-Anhangs einer E-Mail an einen Schulleiter.
+Dateiname: ${filename || '(unbekannt)'}
+
+Text:
+${auszug}
+
+Schreibe eine sehr knappe Zusammenfassung (1–3 Sätze), die für die Triage relevant ist:
+Worum geht es? Welche konkreten Aufgaben, Fristen oder Personen werden genannt? Antworte als reiner Fließtext, ohne Aufzählungen.`;
+  try {
+    const response = await client.messages.create({
+      model: MODEL_FAST,
+      max_tokens: 250,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const zusammenfassung = (response.content[0].text || '').trim();
+    return zusammenfassung
+      ? { zusammenfassung, modell: MODEL_FAST, zeichen: text.length, analysiert_am: new Date().toISOString() }
+      : null;
+  } catch (e) {
+    console.warn('[Anhang-KI] Fehler:', e.message);
+    return null;
+  }
+}
+
 // ── E-Mail-Einordnung ─────────────────────────────────────────────────────────
 
 export async function emailEinordnen(email) {
@@ -265,6 +322,20 @@ export async function emailEinordnen(email) {
     'SELECT id, titel, typ FROM vorgaenge WHERE status != ? ORDER BY updated_at DESC LIMIT 30',
     ['abgeschlossen']
   );
+
+  // Anhang-Zusammenfassungen aus anhang_pfade JSON extrahieren — wenn das
+  // eigentliche Anliegen im PDF steckt, hilft das der Einordnung sehr.
+  let anhaengeBlock = '';
+  try {
+    const anhaenge = email.anhang_pfade
+      ? (typeof email.anhang_pfade === 'string' ? JSON.parse(email.anhang_pfade) : email.anhang_pfade)
+      : [];
+    const mitAnalyse = (anhaenge || []).filter(a => a?.analyse?.zusammenfassung);
+    if (mitAnalyse.length) {
+      anhaengeBlock = '\nAnhänge (KI-Zusammenfassung):\n' +
+        mitAnalyse.map(a => `- ${a.name}: ${a.analyse.zusammenfassung}`).join('\n');
+    }
+  } catch (_) {}
 
   const prompt = `Du bist ein Assistent für Schulleiter [OWNER].
 
@@ -283,7 +354,7 @@ E-Mail:
 Von: ${email.from_name || email.from_email}
 Betreff: ${email.subject}
 Datum: ${email.date ? new Date(email.date).toLocaleString('de-DE') : '?'}
-Inhalt: ${(email.body_text || '').slice(0, 800)}
+Inhalt: ${(email.body_text || '').slice(0, 800)}${anhaengeBlock}
 
 Antworte NUR mit JSON:
 {"einordnung":"vorgang_zuordnen"|"vorgang_anlegen"|"ignorieren","vorgang_id":null,"vorgang_titel":"...","begruendung":"...","prioritaet":1|2|3,"schlagworte":["Wort1","Wort2"],"ki_prioritaet":"dringend"|"normal"|"info","zusammenfassung":"..."}`;

@@ -465,6 +465,19 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
 .email-meta-line{font-size:11px;color:var(--ink3);font-family:'IBM Plex Mono',monospace;display:flex;gap:12px;flex-wrap:wrap}
 .email-body-text{font-size:13px;line-height:1.75;color:var(--ink2);white-space:pre-wrap;font-family:'IBM Plex Sans',sans-serif}
 .email-no-body{font-size:12px;color:var(--ink3);font-family:'IBM Plex Mono',monospace;padding:20px 0;font-style:italic}
+.anhang-block{margin-top:20px;padding-top:16px;border-top:1px dashed var(--border)}
+.anhang-titel{font-size:10px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.1em;color:var(--ink3);margin-bottom:10px}
+.anhang-row{margin-bottom:10px;padding:10px 12px;background:var(--paper2);border:1px solid var(--border);border-radius:var(--r)}
+.anhang-head{display:flex;gap:10px;align-items:center;font-size:12px}
+.anhang-icon{font-size:16px}
+.anhang-name{color:var(--accent);text-decoration:none;font-weight:500;flex-shrink:0;max-width:50%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.anhang-name:hover{text-decoration:underline}
+.anhang-meta{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ink3);flex:1;min-width:0}
+.anhang-dl{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:14px;color:var(--ink3);text-decoration:none;padding:2px 8px;border:1px solid var(--border);border-radius:var(--r)}
+.anhang-dl:hover{color:var(--accent);border-color:var(--accent)}
+.anhang-summary{margin-top:8px;padding:8px 10px;background:var(--paper);border-left:3px solid var(--accent);font-size:12px;line-height:1.55;color:var(--ink2)}
+.anhang-actions{margin-top:8px}
+.anhang-actions .email-action-btn{font-size:11px;padding:6px 10px}
 
 /* Antwort-Bereich */
 .reply-section{margin-top:24px;border-top:2px solid var(--paper3);padding-top:20px}
@@ -893,6 +906,7 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
             </div>
           </div>
           <div id="ev-body"><div class="loading-row"><div class="spin"></div>Lade…</div></div>
+          <div id="ev-anhaenge"></div>
 
           <!-- Antwort -->
           <div class="reply-section" id="reply-section" style="display:none">
@@ -1702,6 +1716,7 @@ async function openEmail(id, fromView) {
   document.getElementById('ev-from').textContent = '';
   document.getElementById('ev-date').textContent = '';
   document.getElementById('ev-body').innerHTML = '<div class="loading-row"><div class="spin"></div>Lade…</div>';
+  document.getElementById('ev-anhaenge').innerHTML = '';
   document.getElementById('ev-ki-analyse').innerHTML = '<div class="loading-row"><div class="spin"></div>Analysiere…</div>';
   document.getElementById('reply-section').style.display = 'none';
   document.getElementById('reply-text').value = '';
@@ -1726,6 +1741,8 @@ async function openEmail(id, fromView) {
     </button>
   </div>`;
     }
+
+    renderAnhaenge(email);
 
     // Vorgänge für Dropdown laden
     const vorgaenge = await req('GET', '/vorgaenge?status=offen');
@@ -1849,6 +1866,70 @@ async function sendReply() {
 
 async function emailEinordnen(id) {
   openEmail(id, 'dash');
+}
+
+function fmtBytes(n) {
+  if (!n) return '';
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return Math.round(n / 1024) + ' KB';
+  return (n / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function renderAnhaenge(email) {
+  const el = document.getElementById('ev-anhaenge');
+  let liste = [];
+  try {
+    liste = email.anhang_pfade
+      ? (typeof email.anhang_pfade === 'string' ? JSON.parse(email.anhang_pfade) : email.anhang_pfade)
+      : [];
+  } catch(_) {}
+  if (!Array.isArray(liste) || !liste.length) { el.innerHTML = ''; return; }
+  el.innerHTML = `
+    <div class="anhang-block">
+      <div class="anhang-titel">📎 Anhänge (${liste.length})</div>
+      ${liste.map((a, i) => renderAnhang(email.id, i, a)).join('')}
+    </div>`;
+}
+
+function renderAnhang(emailId, idx, a) {
+  const isPdf = (a.typ || '').includes('pdf');
+  const dlUrl = `/api/emails/${emailId}/anhang/${idx}?key=${encodeURIComponent(SECRET)}`;
+  const sum = a.analyse?.zusammenfassung;
+  const analyseBlock = sum
+    ? `<div class="anhang-summary">${esc(sum)}</div>`
+    : (isPdf
+        ? `<div class="anhang-actions"><button class="email-action-btn" onclick="anhangAnalysieren(${emailId},${idx},this)">◈ KI-Zusammenfassung erzeugen</button></div>`
+        : '');
+  return `
+    <div class="anhang-row" data-emailid="${emailId}" data-idx="${idx}">
+      <div class="anhang-head">
+        <span class="anhang-icon">${isPdf ? '📄' : '📎'}</span>
+        <a class="anhang-name" href="${dlUrl}" target="_blank" rel="noopener">${esc(a.name || 'anhang')}</a>
+        <span class="anhang-meta">${esc(a.typ || '')} · ${fmtBytes(a.groesse)}</span>
+        <a class="anhang-dl" href="${dlUrl}&download=1" title="Herunterladen">↓</a>
+      </div>
+      ${analyseBlock}
+    </div>`;
+}
+
+async function anhangAnalysieren(emailId, idx, btn) {
+  const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = '… analysiere';
+  try {
+    const r = await req('POST', `/emails/${emailId}/anhang/${idx}/analysieren`);
+    const row = document.querySelector(`.anhang-row[data-emailid="${emailId}"][data-idx="${idx}"]`);
+    if (row) {
+      const actions = row.querySelector('.anhang-actions');
+      const summary = document.createElement('div');
+      summary.className = 'anhang-summary';
+      summary.textContent = r.analyse.zusammenfassung;
+      if (actions) actions.replaceWith(summary); else row.appendChild(summary);
+    }
+    toast('Anhang analysiert ✓', 'ok');
+  } catch(e) {
+    toast('Fehler: ' + e.message, 'err');
+    btn.disabled = false; btn.textContent = orig;
+  }
 }
 
 async function syncKalenderDash() {

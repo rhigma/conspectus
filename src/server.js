@@ -1206,6 +1206,48 @@ Inhalt: ${(email.body_text || '').slice(0, 800) || '(kein Inhalt verfügbar – 
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── E-MAIL-ANHÄNGE ────────────────────────────────────────────────────────────
+async function loadEmailAttachment(emailId, idx) {
+  const row = await queryOne('SELECT id, anhang_pfade FROM emails WHERE id = ?', [emailId]);
+  if (!row) throw Object.assign(new Error('E-Mail nicht gefunden'), { status: 404 });
+  let liste = [];
+  try { liste = row.anhang_pfade ? JSON.parse(row.anhang_pfade) : []; } catch (_) {}
+  const anhang = liste[idx];
+  if (!anhang?.pfad) throw Object.assign(new Error('Anhang nicht gefunden'), { status: 404 });
+  return { row, liste, idx, anhang };
+}
+
+// Anhang vom Nextcloud durchreichen — Browser kann mit ?key=… direkt verlinken.
+app.get('/emails/:id/anhang/:idx', async (req, res) => {
+  try {
+    const { anhang } = await loadEmailAttachment(parseInt(req.params.id), parseInt(req.params.idx));
+    const buf = await ncDownload(anhang.pfad);
+    res.setHeader('Content-Type', anhang.typ || 'application/octet-stream');
+    res.setHeader('Content-Length', buf.length);
+    const safeName = (anhang.name || 'anhang').replace(/[\r\n"]/g, '_');
+    const dispo = req.query.download
+      ? `attachment; filename="${safeName}"`
+      : `inline; filename="${safeName}"`;
+    res.setHeader('Content-Disposition', dispo);
+    res.end(buf);
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
+
+// On-Demand-Analyse für Anhänge, die beim Sync übersprungen wurden (zu groß).
+app.post('/emails/:id/anhang/:idx/analysieren', async (req, res) => {
+  try {
+    const emailId = parseInt(req.params.id);
+    const { liste, idx, anhang } = await loadEmailAttachment(emailId, parseInt(req.params.idx));
+    const buf = await ncDownload(anhang.pfad);
+    const { anhangZusammenfassen } = await import('./ai.js');
+    const analyse = await anhangZusammenfassen(buf, anhang.typ || 'application/pdf', anhang.name);
+    if (!analyse) return res.status(422).json({ error: 'Keine Zusammenfassung möglich (PDF ohne durchsuchbaren Text?)' });
+    liste[idx] = { ...anhang, analyse };
+    await query('UPDATE emails SET anhang_pfade = ? WHERE id = ?', [JSON.stringify(liste), emailId]);
+    res.json({ ok: true, analyse });
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
+
 // ── KALENDER ──────────────────────────────────────────────────────────────────
 app.get('/accounts/calendar', async (req, res) => {
   try { res.json(await query('SELECT id, label, url, color, active FROM calendars ORDER BY label')); }

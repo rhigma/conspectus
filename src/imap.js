@@ -5,6 +5,10 @@ import { speichereAnhang } from './nextcloud.js';
 import { diktatVerarbeiten, getPlaudAbsenderPattern, cleanPlaudBody } from './diktate.js';
 import { getForwardingPatterns, isTrustedForwarder, parseForwardedEmail } from './forwarding.js';
 
+// Schwellwert für automatische PDF-Anhang-Analyse beim Sync.
+// Größere Anhänge werden nur on-demand per Button analysiert.
+const AUTO_ANALYSE_PDF_GROESSE = 500 * 1024; // 500 KB
+
 const MAX_EMAILS = 200;
 const VORGAENGE_ROOT = 'Vorgänge';
 
@@ -145,15 +149,35 @@ async function syncAccount(account) {
             }
             for (const att of parsed.attachments || []) {
               if (att.size > 20 * 1024 * 1024) continue;
+              let pfad = null;
               try {
-                const pfad = await speichereAnhang(
+                pfad = await speichereAnhang(
                   '/E-Mail-Anhänge',
                   `${msg.uid}_${att.filename || 'anhang'}`,
                   att.content,
                   att.contentType
                 );
-                anhangPfade.push({ name: att.filename, pfad, typ: att.contentType, groesse: att.size });
               } catch (e) { /* Anhang-Fehler ignorieren */ }
+              // KI-Zusammenfassung nur für kleine PDFs (Schul-Briefe sind meist
+              // 1–2 Seiten / wenige hundert KB). Größere bleiben unanalysiert
+              // und werden bei Bedarf per Button verarbeitet.
+              let analyse = null;
+              if (pfad
+                  && att.contentType === 'application/pdf'
+                  && att.size <= AUTO_ANALYSE_PDF_GROESSE) {
+                try {
+                  const { anhangZusammenfassen } = await import('./ai.js');
+                  analyse = await anhangZusammenfassen(att.content, att.contentType, att.filename);
+                } catch (e) {
+                  console.warn(`[Anhang-KI] ${att.filename}: ${e.message}`);
+                }
+              }
+              if (pfad) {
+                anhangPfade.push({
+                  name: att.filename, pfad, typ: att.contentType,
+                  groesse: att.size, analyse,
+                });
+              }
               // Plaud verschickt das eigentliche Transkript als .txt-Anhang —
               // der Mail-Body enthält nur "Autoflow execution completed.".
               if (!plaudTranscript
