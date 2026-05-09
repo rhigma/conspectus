@@ -258,6 +258,20 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
 .boox-vorschlag-banner .titel{font-family:'IBM Plex Mono',monospace;font-size:11px;background:rgba(255,255,255,.6);padding:2px 6px;border-radius:3px}
 [data-theme="dark"] .boox-vorschlag-banner{background:#4a3d10;border-color:#7a6428;color:#f0d57a}
 [data-theme="dark"] .boox-vorschlag-banner .titel{background:rgba(0,0,0,.25)}
+.vorschlag-kandidaten{flex-basis:100%;border-top:1px solid rgba(122,90,0,.18);margin-top:4px;padding-top:8px;color:var(--ink2)}
+[data-theme="dark"] .vorschlag-kandidaten{border-top-color:rgba(240,213,122,.2)}
+.vorschlag-kandidaten h5{font-family:'IBM Plex Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink3);margin:6px 0 4px;font-weight:500}
+.vorschlag-kandidaten h5:first-child{margin-top:0}
+.vorschlag-kandidaten label{display:flex;align-items:flex-start;gap:8px;padding:4px 6px;border-radius:4px;cursor:pointer;font-size:11px}
+.vorschlag-kandidaten label:hover{background:rgba(0,0,0,.05)}
+[data-theme="dark"] .vorschlag-kandidaten label:hover{background:rgba(255,255,255,.06)}
+.vorschlag-kandidaten label.ai-match{background:rgba(143,184,122,.18)}
+[data-theme="dark"] .vorschlag-kandidaten label.ai-match{background:rgba(143,184,122,.12)}
+.vorschlag-kandidaten label .ai-tag{font-size:9px;color:var(--green);font-family:'IBM Plex Mono',monospace;flex:0 0 auto;margin-right:2px;align-self:center}
+.vorschlag-kandidaten input[type=checkbox]{margin-top:3px;flex:0 0 auto}
+.vorschlag-kandidaten .meta{font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace}
+.vorschlag-kandidaten .empty{color:var(--ink3);font-size:11px;font-style:italic;padding:2px 6px}
+.vorschlag-kandidaten .begruendung{font-size:10px;color:var(--ink3);font-style:italic;margin-top:8px;padding-top:6px;border-top:1px dashed rgba(0,0,0,.15)}
 .boox-vorschlag{border:1px solid var(--border);border-radius:var(--r);padding:10px 12px;margin-bottom:8px;background:var(--paper2)}
 .boox-vorschlag.uebernommen{border-color:var(--green);background:var(--greenl)}
 .boox-vorschlag.verworfen{opacity:.5;background:var(--paper3)}
@@ -3998,6 +4012,8 @@ function toggleEmailsErledigt() {
 // ── BOOX-NOTIZEN ──────────────────────────────────────────────────────────────
 let _booxDaten = [];
 const _booxOpen = new Set();
+const _vorschlagKandidaten = new Map(); // eintragId → { emails, events, begruendung }
+const _vorschlagLoading = new Set();
 
 function tryParseBoox(json) {
   if (!json) return null;
@@ -4075,6 +4091,9 @@ function renderBoox() {
     const quelldateiLabel = isDiktat ? 'Audio-Datei' : 'Quelldatei';
 
     const vorschlag = (ki.vorgang_vorschlag || '').trim();
+    const kandInner = _vorschlagKandidaten.has(r.id)
+      ? renderVorschlagKandidaten(r.id, _vorschlagKandidaten.get(r.id))
+      : '<div class="meta">Suche nach passenden E-Mails und Terminen…</div>';
     const vorschlagBanner = vorschlag ? `
       <div class="boox-vorschlag-banner">
         <span>💡 Neuer Vorgang vorgeschlagen:</span>
@@ -4082,6 +4101,7 @@ function renderBoox() {
         <span style="flex:1"></span>
         <button class="boox-btn primary" onclick="vorgangAusVorschlag(${r.id})">Vorgang anlegen</button>
         <button class="boox-btn" onclick="vorschlagVerwerfen(${r.id})">Verwerfen</button>
+        <div class="vorschlag-kandidaten" id="kand-${r.id}">${kandInner}</div>
       </div>` : '';
 
     const detail = open ? `
@@ -4125,6 +4145,12 @@ function renderBoox() {
         ${detail}
       </div>`;
   }).join('');
+
+  // Lazy-Load der Vorschlag-Kandidaten (KI-gefilterte E-Mails / Termine).
+  document.querySelectorAll('.vorschlag-kandidaten[id^="kand-"]').forEach(el => {
+    const id = parseInt(el.id.replace('kand-', ''));
+    if (Number.isFinite(id) && !_vorschlagKandidaten.has(id)) loadVorschlagKandidaten(id);
+  });
 }
 
 function statusBadge(status) {
@@ -4236,10 +4262,70 @@ async function booxReset(eintragId, typ, index) {
   }
 }
 
-async function vorgangAusVorschlag(eintragId) {
+async function loadVorschlagKandidaten(eintragId) {
+  if (_vorschlagKandidaten.has(eintragId) || _vorschlagLoading.has(eintragId)) return;
+  _vorschlagLoading.add(eintragId);
   try {
-    const r = await req('POST', `/boox/${eintragId}/vorgang-aus-vorschlag`);
-    toast(r.neu ? 'Vorgang angelegt ✓' : 'Eintrag bestehendem Vorgang zugeordnet ✓', 'ok');
+    const r = await req('GET', `/boox/${eintragId}/vorschlag-kandidaten`);
+    _vorschlagKandidaten.set(eintragId, r);
+    const el = document.getElementById('kand-' + eintragId);
+    if (el) el.innerHTML = renderVorschlagKandidaten(eintragId, r);
+  } catch (e) {
+    const el = document.getElementById('kand-' + eintragId);
+    if (el) el.innerHTML = `<div class="meta" style="color:#a33">Suche fehlgeschlagen: ${esc(e.message)}</div>`;
+  } finally {
+    _vorschlagLoading.delete(eintragId);
+  }
+}
+
+function renderVorschlagKandidaten(eintragId, data) {
+  const { emails = [], events = [], begruendung = '' } = data || {};
+  if (!emails.length && !events.length) {
+    return '<div class="empty">Keine passenden E-Mails oder Termine gefunden.</div>';
+  }
+  const tag = (m) => m ? '<span class="ai-tag">✓ KI</span>' : '';
+  const eMail = (e) => {
+    const dat = e.date ? new Date(e.date).toLocaleDateString('de-DE') : '';
+    const von = esc(e.from_name || e.from_email || '?');
+    return `<label class="${e.ai_match ? 'ai-match' : ''}">
+      <input type="checkbox" data-kand-eintrag="${eintragId}" data-kand-typ="email" data-kand-id="${e.id}" ${e.ai_match ? 'checked' : ''}/>
+      ${tag(e.ai_match)}<span style="flex:1;min-width:0">
+        <strong>${esc(e.subject || '(kein Betreff)')}</strong>
+        <span class="meta"> · ${von} · ${dat}</span>
+      </span>
+    </label>`;
+  };
+  const eEvent = (e) => {
+    const dat = e.start_time ? new Date(e.start_time).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }) : '?';
+    const ort = e.location ? ` · ${esc(e.location)}` : '';
+    return `<label class="${e.ai_match ? 'ai-match' : ''}">
+      <input type="checkbox" data-kand-eintrag="${eintragId}" data-kand-typ="event" data-kand-id="${e.id}" ${e.ai_match ? 'checked' : ''}/>
+      ${tag(e.ai_match)}<span style="flex:1;min-width:0">
+        <strong>${esc(e.title || '(ohne Titel)')}</strong>
+        <span class="meta"> · ${dat}${ort}</span>
+      </span>
+    </label>`;
+  };
+  let html = '';
+  if (emails.length) html += `<h5>E-Mails (${emails.length})</h5>${emails.map(eMail).join('')}`;
+  if (events.length) html += `<h5>Termine (${events.length})</h5>${events.map(eEvent).join('')}`;
+  if (begruendung) html += `<div class="begruendung">${esc(begruendung)}</div>`;
+  return html;
+}
+
+async function vorgangAusVorschlag(eintragId) {
+  const emailIds = [...document.querySelectorAll(`#kand-${eintragId} input[data-kand-typ="email"]:checked`)]
+    .map(el => parseInt(el.dataset.kandId)).filter(Number.isFinite);
+  const eventIds = [...document.querySelectorAll(`#kand-${eintragId} input[data-kand-typ="event"]:checked`)]
+    .map(el => parseInt(el.dataset.kandId)).filter(Number.isFinite);
+  try {
+    const r = await req('POST', `/boox/${eintragId}/vorgang-aus-vorschlag`, { email_ids: emailIds, event_ids: eventIds });
+    const extras = [];
+    if (r.emails_zugeordnet) extras.push(`${r.emails_zugeordnet} E-Mail${r.emails_zugeordnet > 1 ? 's' : ''}`);
+    if (r.events_zugeordnet) extras.push(`${r.events_zugeordnet} Termin${r.events_zugeordnet > 1 ? 'e' : ''}`);
+    const suffix = extras.length ? ` (+ ${extras.join(', ')})` : '';
+    toast((r.neu ? 'Vorgang angelegt ✓' : 'Eintrag bestehendem Vorgang zugeordnet ✓') + suffix, 'ok');
+    _vorschlagKandidaten.delete(eintragId);
     await loadBoox();
   } catch(e) {
     toast('Fehler: ' + e.message, 'error');

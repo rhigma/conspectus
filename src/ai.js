@@ -584,6 +584,70 @@ Antworte NUR mit JSON:
   }
 }
 
+// ── Vorschlag-Kandidaten-Filter ───────────────────────────────────────────────
+// Sortiert vorab via LIKE eingesammelte E-Mails/Termine: welche gehören
+// eindeutig zum vorgeschlagenen neuen Vorgang? Lieber zurückhaltend filtern.
+
+export async function vorschlagKandidatenFiltern({
+  vorgangTitel,
+  transkript = '',
+  zusammenfassung = '',
+  emailKandidaten = [],
+  eventKandidaten = [],
+}) {
+  if (!emailKandidaten.length && !eventKandidaten.length) {
+    return { email_ids: [], event_ids: [], begruendung: '' };
+  }
+
+  const emailListe = emailKandidaten.map(e => {
+    const dat = e.date ? new Date(e.date).toLocaleDateString('de-DE') : '';
+    const von = e.from_name || e.from_email || '?';
+    const betr = e.subject || '(kein Betreff)';
+    const snip = e.body_snippet ? `\n  → ${e.body_snippet.replace(/\s+/g, ' ').slice(0, 200)}` : '';
+    return `[E-Mail #${e.id}] ${dat} ${von}: "${betr}"${snip}`;
+  }).join('\n');
+
+  const eventListe = eventKandidaten.map(e => {
+    const dat = e.start_time ? new Date(e.start_time).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }) : '?';
+    const ort = e.location ? ` @ ${e.location}` : '';
+    return `[Termin #${e.id}] ${dat}: ${e.title || '(ohne Titel)'}${ort}`;
+  }).join('\n');
+
+  const prompt = `Es soll ein neuer Vorgang "${vorgangTitel}" angelegt werden.
+${zusammenfassung ? `\nZusammenfassung des Diktats:\n${zusammenfassung}\n` : ''}${transkript ? `\nTranskript:\n"""\n${String(transkript).slice(0, 2500)}\n"""\n` : ''}
+Aus den unzugeordneten E-Mails und Terminen: welche gehören eindeutig zu diesem Vorgang?
+Sei zurückhaltend — nur klare Treffer auswählen, nicht raten. Wenn unsicher, lieber weglassen.
+
+Kandidaten:
+${emailListe || '(keine E-Mails)'}
+${eventListe || '(keine Termine)'}
+
+Antworte NUR mit JSON (keine Erklärung außerhalb):
+{"email_ids":[1,7],"event_ids":[3],"begruendung":"kurzer Hinweis warum"}`;
+
+  try {
+    const response = await client.messages.create({
+      model: MODEL_FAST,
+      max_tokens: 600,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const raw = response.content[0].text.trim().replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(raw);
+    const validEmailIds = new Set(emailKandidaten.map(e => e.id));
+    const validEventIds = new Set(eventKandidaten.map(e => e.id));
+    return {
+      email_ids: (Array.isArray(parsed.email_ids) ? parsed.email_ids : [])
+        .map(Number).filter(n => Number.isFinite(n) && validEmailIds.has(n)),
+      event_ids: (Array.isArray(parsed.event_ids) ? parsed.event_ids : [])
+        .map(Number).filter(n => Number.isFinite(n) && validEventIds.has(n)),
+      begruendung: typeof parsed.begruendung === 'string' ? parsed.begruendung : '',
+    };
+  } catch (e) {
+    console.warn('[vorschlagKandidatenFiltern] Fehler:', e.message);
+    return { email_ids: [], event_ids: [], begruendung: '' };
+  }
+}
+
 // ── Morgen-Briefing ───────────────────────────────────────────────────────────
 
 export async function morgenbriefing() {

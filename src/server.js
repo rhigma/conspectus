@@ -7,7 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initSchema, query, queryOne } from './db.js';
 import { syncAllAccounts, moveToErledigt, syncErledigtStatus, vorgangFolderPath, renameVorgangFolderOnAllAccounts } from './imap.js';
-import { chat, executeAction, getTokenStats, emailEinordnen, notizAnalysieren, morgenbriefing, naturalSearchQuery } from './ai.js';
+import { chat, executeAction, getTokenStats, emailEinordnen, notizAnalysieren, morgenbriefing, naturalSearchQuery, vorschlagKandidatenFiltern } from './ai.js';
 import { ncMkdir, ncUpload, neueBooxNotizen, booxVerarbeitet, ncDownload, vorgangOrdner, defaultZielOrdner, ncOrdnerExistiert, moveEmailAnhaengeZuVorgang, NC_BASIS, NC_VORGAENGE_BASIS, NC_EMAIL_ANHAENGE_BASIS, BOOX_PFAD, BOOX_VERARBEITET } from './nextcloud.js';
 import { createCalDavEvent, deleteCalDavEvent } from './caldav.js';
 import { diktatVerarbeiten } from './diktate.js';
@@ -944,15 +944,124 @@ app.post('/boox/:eintragId/reset', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Suchbegriffe aus der Diktat-/Notiz-Analyse extrahieren.
+function vorschlagSuchterme(analyse, vorschlagTitel) {
+  const stop = new Set([
+    'der','die','das','und','oder','aber','von','vom','mit','bei','für','auf','aus','zum','zur','in','im','am','an','zu',
+    'ein','eine','einen','einem','einer','des','dem','den','sich','sie','wir','ich','euch','uns',
+    'termin','frau','herr','herrn','treffen','meeting','besprechung','sitzung','gespräch',
+    'email','e-mail','mail','nachricht','schreiben','brief','telefonat',
+    'aufgabe','vorgang','diktat','notiz','thema','sache','fall',
+    'montag','dienstag','mittwoch','donnerstag','freitag','samstag','sonntag',
+    'januar','februar','märz','april','mai','juni','juli','august','september','oktober','november','dezember',
+    'heute','morgen','gestern','nächste','letzte','dieser','dieses','dieses','jeder',
+  ]);
+  const phrases = [vorschlagTitel];
+  for (const t of (analyse?.termine || []))      { if (t?.titel) phrases.push(t.titel); }
+  for (const d of (analyse?.delegationen || [])) { if (d?.an) phrases.push(d.an); if (d?.aufgabe) phrases.push(d.aufgabe); }
+  for (const a of (analyse?.aufgaben || []))     { if (a?.titel) phrases.push(a.titel); }
+
+  const terms = new Set();
+  for (const raw of phrases) {
+    if (!raw) continue;
+    const phrase = String(raw).trim();
+    if (phrase.length >= 4 && phrase.length <= 60) terms.add(phrase);
+    for (const w of phrase.split(/\s+/)) {
+      const cleaned = w.replace(/[.,;:!?"„"–—()\[\]'']/g, '').trim();
+      if (cleaned.length >= 4 && !stop.has(cleaned.toLowerCase())) terms.add(cleaned);
+    }
+  }
+  return [...terms].slice(0, 20);
+}
+
+// Liefert E-Mails/Termine, die eventuell zum Vorschlag-Vorgang gehören.
+// Schritt 1: LIKE-Vorauswahl (max 30 E-Mails / 20 Termine).
+// Schritt 2: KI-Filter ranked + markiert klare Treffer (ai_match=true).
+app.get('/boox/:eintragId/vorschlag-kandidaten', async (req, res) => {
+  try {
+    const eintragId = parseInt(req.params.eintragId);
+    const { analyse } = await loadBooxEintrag(eintragId);
+    const titel = (analyse?.vorgang_vorschlag || '').trim();
+    if (!titel) return res.json({ emails: [], events: [], begruendung: '' });
+
+    const terms = vorschlagSuchterme(analyse, titel);
+    if (!terms.length) return res.json({ emails: [], events: [], begruendung: '' });
+
+    // E-Mails: nicht zugeordnet, nicht erledigt, letzte 60 Tage
+    const emailWhere = terms.map(() => '(e.subject LIKE ? OR e.body_text LIKE ? OR e.from_name LIKE ?)').join(' OR ');
+    const emailParams = [];
+    for (const t of terms) { const like = `%${t}%`; emailParams.push(like, like, like); }
+    const emails = await query(
+      `SELECT e.id, e.subject, e.from_name, e.from_email, e.date,
+              LEFT(COALESCE(e.body_text,''), 250) AS body_snippet
+       FROM emails e
+       WHERE e.vorgang_id IS NULL
+         AND e.erledigt = 0
+         AND e.date >= DATE_SUB(NOW(), INTERVAL 60 DAY)
+         AND (${emailWhere})
+       ORDER BY e.date DESC
+       LIMIT 30`,
+      emailParams
+    );
+
+    // Events: nicht zugeordnet, von 30 Tage zurück bis 90 Tage voraus
+    const eventWhere = terms.map(() => '(ev.title LIKE ? OR ev.description LIKE ? OR ev.location LIKE ?)').join(' OR ');
+    const eventParams = [];
+    for (const t of terms) { const like = `%${t}%`; eventParams.push(like, like, like); }
+    const events = await query(
+      `SELECT ev.id, ev.title, ev.start_time, ev.end_time, ev.location
+       FROM events ev
+       WHERE ev.vorgang_id IS NULL
+         AND ev.start_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+         AND ev.start_time <= DATE_ADD(NOW(), INTERVAL 90 DAY)
+         AND (${eventWhere})
+       ORDER BY ev.start_time ASC
+       LIMIT 20`,
+      eventParams
+    );
+
+    // KI-Filter — markiert klare Treffer als ai_match=true.
+    let aiMatchEmails = new Set();
+    let aiMatchEvents = new Set();
+    let begruendung = '';
+    if (emails.length || events.length) {
+      const filterErgebnis = await vorschlagKandidatenFiltern({
+        vorgangTitel: titel,
+        transkript: analyse?.transkription || '',
+        zusammenfassung: analyse?.zusammenfassung || '',
+        emailKandidaten: emails,
+        eventKandidaten: events,
+      });
+      aiMatchEmails = new Set(filterErgebnis.email_ids);
+      aiMatchEvents = new Set(filterErgebnis.event_ids);
+      begruendung = filterErgebnis.begruendung;
+    }
+
+    res.json({
+      emails: emails.map(e => ({ ...e, ai_match: aiMatchEmails.has(e.id) })),
+      events: events.map(e => ({ ...e, ai_match: aiMatchEvents.has(e.id) })),
+      begruendung,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Vorgangs-Vorschlag aus einem Eintrag (Diktat oder Boox-Notiz) annehmen:
 // legt einen neuen Vorgang mit dem vorgeschlagenen Titel an, hängt den
 // Eintrag dorthin um, und entfernt den Vorschlag aus dem inhalt-JSON.
+// Optional: { email_ids:[], event_ids:[] } werden dem neuen Vorgang zugeordnet.
 app.post('/boox/:eintragId/vorgang-aus-vorschlag', async (req, res) => {
   try {
     const eintragId = parseInt(req.params.eintragId);
     const { row, analyse } = await loadBooxEintrag(eintragId);
     const titelRaw = (req.body?.titel || analyse.vorgang_vorschlag || '').trim();
     if (!titelRaw) return res.status(400).json({ error: 'Kein Vorschlag vorhanden' });
+
+    const emailIds = Array.isArray(req.body?.email_ids)
+      ? req.body.email_ids.map(Number).filter(Number.isFinite)
+      : [];
+    const eventIds = Array.isArray(req.body?.event_ids)
+      ? req.body.event_ids.map(Number).filter(Number.isFinite)
+      : [];
 
     const vorhanden = await queryOne(
       'SELECT id FROM vorgaenge WHERE titel LIKE ? LIMIT 1',
@@ -975,7 +1084,40 @@ app.post('/boox/:eintragId/vorgang-aus-vorschlag', async (req, res) => {
       'UPDATE vorgang_eintraege SET vorgang_id = ?, inhalt = ? WHERE id = ?',
       [vorgangId, JSON.stringify(analyse), eintragId]
     );
-    res.json({ ok: true, vorgang_id: vorgangId, neu: !vorhanden });
+
+    // E-Mails einzeln zuordnen — nutzt die bestehende Aktion (IMAP-Move,
+    // Chronologie, Anhang-Umzug). Nur unzugeordnete Mails verschieben.
+    let emailsZugeordnet = 0;
+    for (const eid of emailIds) {
+      const e = await queryOne('SELECT id FROM emails WHERE id = ? AND vorgang_id IS NULL', [eid]);
+      if (!e) continue;
+      try {
+        await executeAction({ action: 'email_zuordnen', email_id: eid, vorgang_id: vorgangId });
+        emailsZugeordnet++;
+      } catch (err) {
+        console.warn('[Vorschlag] E-Mail-Zuordnung fehlgeschlagen:', eid, err.message);
+      }
+    }
+
+    // Events: nur DB-Update, kein IMAP/CalDAV-Move nötig.
+    let eventsZugeordnet = 0;
+    if (eventIds.length) {
+      const placeholders = eventIds.map(() => '?').join(',');
+      const r = await query(
+        `UPDATE events SET vorgang_id = ?
+         WHERE id IN (${placeholders}) AND vorgang_id IS NULL`,
+        [vorgangId, ...eventIds]
+      );
+      eventsZugeordnet = r.affectedRows || 0;
+    }
+
+    res.json({
+      ok: true,
+      vorgang_id: vorgangId,
+      neu: !vorhanden,
+      emails_zugeordnet: emailsZugeordnet,
+      events_zugeordnet: eventsZugeordnet,
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
