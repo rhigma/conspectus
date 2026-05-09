@@ -859,7 +859,7 @@ app.get('/boox/status', async (req, res) => {
     const eintraege = await query(
       `SELECT id, vorgang_id, titel, inhalt, datei_pfad, created_at
        FROM vorgang_eintraege
-       WHERE titel LIKE 'Boox:%' OR titel LIKE 'Diktat:%'
+       WHERE titel LIKE 'Boox:%' OR titel LIKE 'Diktat:%' OR titel LIKE 'Rocketbook:%'
        ORDER BY created_at DESC LIMIT 5`
     );
     res.json(eintraege);
@@ -875,7 +875,7 @@ app.get('/boox/notizen', async (req, res) => {
               v.titel AS vorgang_titel, v.status AS vorgang_status
          FROM vorgang_eintraege e
          LEFT JOIN vorgaenge v ON v.id = e.vorgang_id
-        WHERE e.titel LIKE 'Boox:%' OR e.titel LIKE 'Diktat:%'
+        WHERE e.titel LIKE 'Boox:%' OR e.titel LIKE 'Diktat:%' OR e.titel LIKE 'Rocketbook:%'
         ORDER BY e.created_at DESC
         LIMIT ?`,
       [limit]
@@ -889,7 +889,7 @@ app.get('/boox/notizen', async (req, res) => {
 async function loadBooxEintrag(eintragId) {
   const row = await queryOne(
     `SELECT id, vorgang_id, inhalt FROM vorgang_eintraege
-     WHERE id = ? AND (titel LIKE 'Boox:%' OR titel LIKE 'Diktat:%')`,
+     WHERE id = ? AND (titel LIKE 'Boox:%' OR titel LIKE 'Diktat:%' OR titel LIKE 'Rocketbook:%')`,
     [eintragId]
   );
   if (!row) throw new Error('Notiz-Eintrag nicht gefunden');

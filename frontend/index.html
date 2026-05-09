@@ -4548,8 +4548,9 @@ function renderBoox() {
   list.innerHTML = rows.map(r => {
     const ki = tryParseBoox(r.inhalt) || {};
     const isDiktat = (r.titel || '').startsWith('Diktat:');
-    const titelClean = (r.titel || '').replace(/^(Boox|Diktat):\s*/, '');
-    const icon = isDiktat ? '🎙' : '✎';
+    const isRocketbook = (r.titel || '').startsWith('Rocketbook:');
+    const titelClean = (r.titel || '').replace(/^(Boox|Diktat|Rocketbook):\s*/, '');
+    const icon = isDiktat ? '🎙' : isRocketbook ? '📓' : '✎';
     const open = _booxOpen.has(r.id);
     const fehler = ki.fehler;
     const seiten = ki.seiten;
@@ -4561,7 +4562,7 @@ function renderBoox() {
 
     const dauerStr = dauer ? `${Math.floor(dauer/60)}:${String(dauer%60).padStart(2,'0')} min` : '';
     const meta = [
-      isDiktat ? (dauerStr || 'Diktat') : (seiten ? `${seiten} S.` : ''),
+      isDiktat ? (dauerStr || 'Diktat') : isRocketbook ? `Rocketbook${seiten ? ' · ' + seiten + ' S.' : ''}` : (seiten ? `${seiten} S.` : ''),
       offenSum ? `${offenSum} offene Vorschläge` : 'alle bearbeitet',
     ].filter(Boolean).join(' · ');
 
@@ -4577,10 +4578,10 @@ function renderBoox() {
       : '<div class="meta">Suche nach passenden E-Mails und Terminen…</div>';
     const vorschlagBanner = vorschlag ? `
       <div class="boox-vorschlag-banner">
-        <span>💡 Neuer Vorgang vorgeschlagen:</span>
+        <span>💡 Vorschlag:</span>
         <span class="titel">${esc(vorschlag)}</span>
         <span style="flex:1"></span>
-        <button class="boox-btn primary" onclick="vorgangAusVorschlag(${r.id})">Vorgang anlegen</button>
+        <button class="boox-btn primary" onclick="vorgangAusVorschlag(${r.id})">Übernehmen</button>
         <button class="boox-btn" onclick="vorschlagVerwerfen(${r.id})">Verwerfen</button>
         <div class="vorschlag-kandidaten" id="kand-${r.id}">${kandInner}</div>
       </div>` : '';

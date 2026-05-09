@@ -40,37 +40,37 @@ export async function rocketbookVerarbeiten({
   const analyse = await notizAnalysieren(pdfBuffer.toString('base64'), 'application/pdf', []);
   const neueVorschlaege = normVorschlaege(analyse);
 
-  // Vorgang auflösen — nur bestehende Vorgänge zuordnen. Neuer Titel wird als
-  // Vorschlag im Eintrag gespeichert; der User entscheidet selbst.
-  let vorgangId = analyse.vorgang_id ? parseInt(analyse.vorgang_id) : null;
+  // Bewusst KEINE Auto-Zuordnung: alle Rocketbook-Einträge landen im Sammel-
+  // Vorgang, der User entscheidet manuell über die Zuordnung. Den Titel-
+  // Vorschlag der KI (egal ob bestehender Vorgang oder neuer Titel) speichern
+  // wir als Vorschlag — das `/vorgang-aus-vorschlag`-Endpoint matcht via LIKE
+  // und nutzt einen bestehenden Vorgang wieder bzw. legt einen neuen an.
   let vorgangVorschlag = null;
-  if (!vorgangId && analyse.vorgang_titel) {
+  if (analyse.vorgang_id) {
     const vorhanden = await queryOne(
-      'SELECT id FROM vorgaenge WHERE titel LIKE ? LIMIT 1',
-      [`%${analyse.vorgang_titel}%`]
+      'SELECT titel FROM vorgaenge WHERE id = ? LIMIT 1',
+      [parseInt(analyse.vorgang_id)]
     );
-    if (vorhanden) {
-      vorgangId = vorhanden.id;
-    } else {
-      vorgangVorschlag = analyse.vorgang_titel;
-    }
+    if (vorhanden?.titel) vorgangVorschlag = vorhanden.titel;
+  }
+  if (!vorgangVorschlag && analyse.vorgang_titel) {
+    vorgangVorschlag = analyse.vorgang_titel;
   }
 
-  if (!vorgangId) {
-    const sammel = await queryOne(
-      `SELECT id FROM vorgaenge WHERE titel = 'Notizen ohne Zuordnung' LIMIT 1`
+  let vorgangId;
+  const sammel = await queryOne(
+    `SELECT id FROM vorgaenge WHERE titel = 'Notizen ohne Zuordnung' LIMIT 1`
+  );
+  if (sammel) {
+    vorgangId = sammel.id;
+  } else {
+    const ncOrdnerPfad = await vorgangOrdner('Notizen ohne Zuordnung').catch(() => null);
+    const result = await query(
+      `INSERT INTO vorgaenge (titel, typ, beschreibung, nc_ordner)
+       VALUES ('Notizen ohne Zuordnung', 'sonstiges', 'Sammelvorgang für nicht zugeordnete PDF-Notizen', ?)`,
+      [ncOrdnerPfad]
     );
-    if (sammel) {
-      vorgangId = sammel.id;
-    } else {
-      const ncOrdnerPfad = await vorgangOrdner('Notizen ohne Zuordnung').catch(() => null);
-      const result = await query(
-        `INSERT INTO vorgaenge (titel, typ, beschreibung, nc_ordner)
-         VALUES ('Notizen ohne Zuordnung', 'sonstiges', 'Sammelvorgang für nicht zugeordnete PDF-Notizen', ?)`,
-        [ncOrdnerPfad]
-      );
-      vorgangId = result.insertId;
-    }
+    vorgangId = result.insertId;
   }
 
   const inhalt = {
@@ -79,7 +79,11 @@ export async function rocketbookVerarbeiten({
     quelle: 'rocketbook_email',
     vorgang_vorschlag: vorgangVorschlag,
   };
-  const eintragTitel = `Rocketbook: ${safeFilename(titel || dateiname || 'Notiz')}`;
+  // Doppeltes "Rocketbook" im Betreff entfernen — Rocketbook nennt seine
+  // Mails standardmäßig "Rocketbook Scan - <Datum>", was sonst zu
+  // "Rocketbook: Rocketbook Scan - …" führt.
+  const titelStripped = (titel || dateiname || 'Notiz').replace(/^rocketbook\s*[-:]?\s*/i, '').trim() || 'Notiz';
+  const eintragTitel = `Rocketbook: ${safeFilename(titelStripped)}`;
   const result = await query(
     'INSERT INTO vorgang_eintraege (vorgang_id, typ, titel, inhalt, datei_pfad) VALUES (?,?,?,?,?)',
     [vorgangId, 'notiz', eintragTitel, JSON.stringify(inhalt), ncPfad]
