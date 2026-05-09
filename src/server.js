@@ -73,14 +73,15 @@ app.get('/vorgaenge/:id', async (req, res) => {
     const v = await queryOne('SELECT * FROM vorgaenge WHERE id = ?', [req.params.id]);
     if (!v) return res.status(404).json({ error: 'Nicht gefunden' });
 
-    const [eintraege, delegationen, emails, termine] = await Promise.all([
+    const [eintraege, delegationen, emails, termine, bewerbungen] = await Promise.all([
       query('SELECT * FROM vorgang_eintraege WHERE vorgang_id = ? ORDER BY created_at ASC', [req.params.id]),
       query('SELECT * FROM delegationen WHERE vorgang_id = ? ORDER BY created_at ASC', [req.params.id]),
       query('SELECT id, from_name, from_email, subject, date, unread, body_text, anhang_pfade FROM emails WHERE vorgang_id = ? ORDER BY date DESC', [req.params.id]),
       query('SELECT * FROM events WHERE vorgang_id = ? ORDER BY start_time ASC', [req.params.id]),
+      query('SELECT * FROM bewerbungen WHERE vorgang_id = ? ORDER BY eingangsdatum DESC, created_at DESC', [req.params.id]),
     ]);
 
-    res.json({ ...v, eintraege, delegationen, emails, termine });
+    res.json({ ...v, eintraege, delegationen, emails, termine, bewerbungen });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1809,6 +1810,68 @@ app.delete('/todos/:id', async (req, res) => {
       await deleteCalDavEvent(todo.calendar_id, todo.event_uid).catch(() => {});
     }
     await query('DELETE FROM todos WHERE id = ?', [req.params.id]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── BEWERBUNGEN ───────────────────────────────────────────────────────────────
+const BEWERBUNG_STATUS = ['eingegangen','gesichtet','eingeladen','interview','zusage','absage','zurueckgezogen','eingestellt'];
+
+app.get('/bewerbungen', async (req, res) => {
+  try {
+    const where = [];
+    const params = [];
+    if (req.query.vorgang_id) { where.push('b.vorgang_id = ?'); params.push(parseInt(req.query.vorgang_id)); }
+    if (req.query.status)     { where.push('b.status = ?');     params.push(req.query.status); }
+    const clause = where.length ? 'WHERE ' + where.join(' AND ') : '';
+    const rows = await query(
+      `SELECT b.*, v.titel AS vorgang_titel
+       FROM bewerbungen b JOIN vorgaenge v ON v.id = b.vorgang_id
+       ${clause}
+       ORDER BY b.eingangsdatum DESC, b.created_at DESC`,
+      params
+    );
+    res.json(rows);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/bewerbungen', async (req, res) => {
+  try {
+    const { vorgang_id, name, email, telefon, eingangsdatum, status, naechster_termin, qualifikation, notiz } = req.body;
+    if (!vorgang_id || !name?.trim()) return res.status(400).json({ error: 'vorgang_id und name sind Pflicht' });
+    const st = status && BEWERBUNG_STATUS.includes(status) ? status : 'eingegangen';
+    const result = await query(
+      `INSERT INTO bewerbungen (vorgang_id, name, email, telefon, eingangsdatum, status, naechster_termin, qualifikation, notiz)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+      [vorgang_id, name.trim(), email || null, telefon || null, eingangsdatum || null, st, naechster_termin || null, qualifikation || null, notiz || null]
+    );
+    res.json({ id: result.insertId });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.patch('/bewerbungen/:id', async (req, res) => {
+  try {
+    const allowed = ['name','email','telefon','eingangsdatum','status','naechster_termin','qualifikation','notiz'];
+    const updates = [], params = [];
+    for (const key of allowed) {
+      if (key in req.body) {
+        if (key === 'status' && req.body.status && !BEWERBUNG_STATUS.includes(req.body.status)) {
+          return res.status(400).json({ error: 'Ungültiger Status' });
+        }
+        updates.push(`${key} = ?`);
+        params.push(req.body[key] ?? null);
+      }
+    }
+    if (!updates.length) return res.json({ ok: true });
+    params.push(req.params.id);
+    await query(`UPDATE bewerbungen SET ${updates.join(', ')} WHERE id = ?`, params);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/bewerbungen/:id', async (req, res) => {
+  try {
+    await query('DELETE FROM bewerbungen WHERE id = ?', [req.params.id]);
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });

@@ -232,6 +232,22 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
 .status-select.abgeschlossen{background:var(--greenl);color:var(--green);border-color:transparent}
 .status-select.in_bearbeitung{background:var(--bluel);color:var(--blue);border-color:transparent}
 .status-select.wartet{background:var(--goldl);color:var(--gold);border-color:transparent}
+.bew-liste{display:flex;flex-direction:column}
+.bew-row{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--paper2)}
+.bew-row:last-child{border-bottom:none}
+.bew-name{grid-column:1;font-size:13px;color:var(--ink);cursor:pointer;font-weight:500}
+.bew-name:hover{color:var(--accent)}
+.bew-meta{grid-column:1/-1;font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace;display:flex;gap:6px;flex-wrap:wrap}
+.bew-status{grid-column:2;font-size:9px;padding:2px 6px;border-radius:20px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.06em;background:var(--paper3);color:var(--ink3);border:1px solid transparent;cursor:pointer;outline:none}
+.bew-status:hover{border-color:var(--accent2)}
+.bew-status.status-eingegangen{background:var(--paper3);color:var(--ink3)}
+.bew-status.status-gesichtet{background:var(--paper2);color:var(--ink2)}
+.bew-status.status-eingeladen{background:var(--bluel);color:var(--blue)}
+.bew-status.status-interview{background:var(--bluel);color:var(--blue)}
+.bew-status.status-zusage{background:var(--greenl);color:var(--green)}
+.bew-status.status-eingestellt{background:var(--greenl);color:var(--green);font-weight:600}
+.bew-status.status-absage{background:var(--accentl);color:var(--accent)}
+.bew-status.status-zurueckgezogen{background:var(--paper3);color:var(--ink3);text-decoration:line-through}
 .typ-select{font-size:9px;padding:2px 6px;border-radius:20px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.06em;background:var(--paper3);color:var(--ink3);border:1px solid transparent;cursor:pointer;outline:none}
 .typ-select:hover{border-color:var(--accent2)}
 .typ-select.personal{background:var(--accentl);color:var(--accent)}
@@ -1451,6 +1467,40 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
 </div>
 
 <!-- MODAL: NEUES TODO -->
+<div class="modal-bg" id="m-bewerbung" style="display:none" onclick="bgClose(event,'m-bewerbung')">
+  <div class="modal">
+    <h2 id="mb-title">Bewerbung</h2>
+    <input type="hidden" id="mb-id"/>
+    <div class="mf"><label>Name</label><input id="mb-name" placeholder="Vor- und Nachname"/></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="mf"><label>E-Mail</label><input id="mb-email" type="email" placeholder="max@example.de"/></div>
+      <div class="mf"><label>Telefon</label><input id="mb-telefon" placeholder="optional"/></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="mf"><label>Eingang</label><input id="mb-eingang" type="date"/></div>
+      <div class="mf"><label>Status</label>
+        <select id="mb-status">
+          <option value="eingegangen">eingegangen</option>
+          <option value="gesichtet">gesichtet</option>
+          <option value="eingeladen">eingeladen</option>
+          <option value="interview">interview</option>
+          <option value="zusage">zusage</option>
+          <option value="absage">absage</option>
+          <option value="zurueckgezogen">zurückgezogen</option>
+          <option value="eingestellt">eingestellt</option>
+        </select>
+      </div>
+    </div>
+    <div class="mf"><label>Nächster Termin</label><input id="mb-termin" type="datetime-local"/></div>
+    <div class="mf"><label>Qualifikation</label><input id="mb-quali" placeholder="z.B. Mathematik / Physik, 2. Staatsexamen"/></div>
+    <div class="mf"><label>Notiz</label><textarea id="mb-notiz" placeholder="Eindruck, Auffälligkeiten…" style="min-height:70px"></textarea></div>
+    <div class="modal-btns">
+      <button class="btn-c" onclick="closeM('m-bewerbung')">Abbrechen</button>
+      <button class="btn-s" onclick="saveBewerbung()">Speichern</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="m-todo" style="display:none" onclick="bgClose(event,'m-todo')">
   <div class="modal">
     <h2>Neue Aufgabe</h2>
@@ -2736,6 +2786,55 @@ function renderTodosCard(todos) {
   </div>`;
 }
 
+const BEWERBUNG_STATUS_LABEL = {
+  eingegangen:    'eingegangen',
+  gesichtet:      'gesichtet',
+  eingeladen:     'eingeladen',
+  interview:      'interview',
+  zusage:         'zusage',
+  absage:         'absage',
+  zurueckgezogen: 'zurückgezogen',
+  eingestellt:    'eingestellt',
+};
+
+function bewerbungStatusOptions(current) {
+  return Object.entries(BEWERBUNG_STATUS_LABEL).map(
+    ([k, l]) => `<option value="${k}"${k===current?' selected':''}>${l}</option>`
+  ).join('');
+}
+
+function renderBewerbungenCard(v) {
+  const list = v.bewerbungen || [];
+  const offen = list.filter(b => !['absage','zurueckgezogen','eingestellt'].includes(b.status)).length;
+
+  const rows = list.length ? list.map(b => {
+    const termin = b.naechster_termin ? fmtDateTime(b.naechster_termin) : '';
+    const eingang = b.eingangsdatum ? fmtDate(b.eingangsdatum) : '';
+    return `
+      <div class="bew-row" data-id="${b.id}">
+        <div class="bew-name" onclick="editBewerbung(${b.id})" title="Bearbeiten">${esc(b.name)}</div>
+        <div class="bew-meta">
+          ${eingang ? `<span title="Eingang">⌖ ${eingang}</span>` : ''}
+          ${b.qualifikation ? `<span title="Qualifikation">· ${esc(b.qualifikation)}</span>` : ''}
+          ${termin ? `<span title="Nächster Termin" style="color:var(--accent)">· ◷ ${termin}</span>` : ''}
+        </div>
+        <select class="bew-status status-${b.status}" onchange="setBewerbungStatus(${b.id},this)">
+          ${bewerbungStatusOptions(b.status)}
+        </select>
+        <button class="todo-del" onclick="bewerbungLoeschen(${b.id})" title="Entfernen">×</button>
+      </div>`;
+  }).join('') : '<div class="datei-empty">Noch keine Bewerbungen erfasst</div>';
+
+  return `<div class="card" style="padding:14px">
+    <div class="card-header" style="margin-bottom:10px">
+      <span class="card-title">◍ Bewerbungen</span>
+      <span class="card-count">${offen} offen / ${list.length} ges.</span>
+      <button class="tag-btn" style="margin-left:auto;font-size:10px" onclick="openNewBewerbung(${v.id})">+ Neu</button>
+    </div>
+    <div class="bew-liste">${rows}</div>
+  </div>`;
+}
+
 function renderDetail(v, todos = []) {
   // Chronologie zusammenbauen
   const all = [
@@ -2778,6 +2877,7 @@ function renderDetail(v, todos = []) {
       <div class="chronologie">${chronHtml}</div>
     </div>
     <div class="detail-sidebar">
+      ${v.typ === 'bewerbungsverfahren' ? renderBewerbungenCard(v) : ''}
       ${renderTodosCard(todos)}
       <div class="card" style="padding:14px">
         <div class="card-header"><span class="card-title">Delegationen</span></div>
@@ -2937,6 +3037,86 @@ async function todoFaelligBearbeiten(id, aktuell) {
         }
       }
     }
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+}
+
+// ── BEWERBUNGEN ────────────────────────────────────────────────────────────────
+function openNewBewerbung(vorgangId) {
+  document.getElementById('mb-title').textContent = 'Neue Bewerbung';
+  document.getElementById('mb-id').value = '';
+  document.getElementById('mb-id').dataset.vorgangId = vorgangId;
+  document.getElementById('mb-name').value = '';
+  document.getElementById('mb-email').value = '';
+  document.getElementById('mb-telefon').value = '';
+  document.getElementById('mb-eingang').value = new Date().toISOString().slice(0,10);
+  document.getElementById('mb-status').value = 'eingegangen';
+  document.getElementById('mb-termin').value = '';
+  document.getElementById('mb-quali').value = '';
+  document.getElementById('mb-notiz').value = '';
+  document.getElementById('m-bewerbung').style.display = 'flex';
+  setTimeout(() => document.getElementById('mb-name').focus(), 50);
+}
+
+async function editBewerbung(id) {
+  try {
+    const list = await req('GET', `/bewerbungen?vorgang_id=${activeVorgangId}`);
+    const b = list.find(x => x.id === id);
+    if (!b) { toast('Bewerbung nicht gefunden', 'err'); return; }
+    document.getElementById('mb-title').textContent = 'Bewerbung bearbeiten';
+    document.getElementById('mb-id').value = b.id;
+    document.getElementById('mb-id').dataset.vorgangId = b.vorgang_id;
+    document.getElementById('mb-name').value = b.name || '';
+    document.getElementById('mb-email').value = b.email || '';
+    document.getElementById('mb-telefon').value = b.telefon || '';
+    document.getElementById('mb-eingang').value = b.eingangsdatum ? b.eingangsdatum.slice(0,10) : '';
+    document.getElementById('mb-status').value = b.status || 'eingegangen';
+    document.getElementById('mb-termin').value = b.naechster_termin ? b.naechster_termin.slice(0,16) : '';
+    document.getElementById('mb-quali').value = b.qualifikation || '';
+    document.getElementById('mb-notiz').value = b.notiz || '';
+    document.getElementById('m-bewerbung').style.display = 'flex';
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+}
+
+async function saveBewerbung() {
+  const id = document.getElementById('mb-id').value;
+  const vorgangId = document.getElementById('mb-id').dataset.vorgangId;
+  const name = document.getElementById('mb-name').value.trim();
+  if (!name) { toast('Name ist Pflicht', 'err'); return; }
+  const body = {
+    name,
+    email:           document.getElementById('mb-email').value.trim() || null,
+    telefon:         document.getElementById('mb-telefon').value.trim() || null,
+    eingangsdatum:   document.getElementById('mb-eingang').value || null,
+    status:          document.getElementById('mb-status').value,
+    naechster_termin:document.getElementById('mb-termin').value || null,
+    qualifikation:   document.getElementById('mb-quali').value.trim() || null,
+    notiz:           document.getElementById('mb-notiz').value.trim() || null,
+  };
+  try {
+    if (id) {
+      await req('PATCH', `/bewerbungen/${id}`, body);
+    } else {
+      await req('POST', '/bewerbungen', { vorgang_id: parseInt(vorgangId), ...body });
+    }
+    closeM('m-bewerbung');
+    if (activeVorgangId) openVorgang(activeVorgangId);
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+}
+
+async function setBewerbungStatus(id, sel) {
+  const status = sel.value;
+  try {
+    await req('PATCH', `/bewerbungen/${id}`, { status });
+    sel.className = 'bew-status status-' + status;
+    toast('Status: ' + (BEWERBUNG_STATUS_LABEL[status] || status));
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+}
+
+async function bewerbungLoeschen(id) {
+  if (!confirm('Bewerbung wirklich entfernen?')) return;
+  try {
+    await req('DELETE', `/bewerbungen/${id}`);
+    if (activeVorgangId) openVorgang(activeVorgangId);
   } catch(e) { toast('Fehler: ' + e.message, 'err'); }
 }
 

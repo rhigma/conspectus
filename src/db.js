@@ -216,6 +216,25 @@ export async function initSchema() {
   `);
 
   await db.execute(`
+    CREATE TABLE IF NOT EXISTS bewerbungen (
+      id              INT AUTO_INCREMENT PRIMARY KEY,
+      vorgang_id      INT NOT NULL,
+      name            VARCHAR(255) NOT NULL,
+      email           VARCHAR(255),
+      telefon         VARCHAR(50),
+      eingangsdatum   DATE,
+      status          ENUM('eingegangen','gesichtet','eingeladen','interview','zusage','absage','zurueckgezogen','eingestellt')
+                      NOT NULL DEFAULT 'eingegangen',
+      naechster_termin DATETIME,
+      qualifikation   VARCHAR(255),
+      notiz           TEXT,
+      created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      FOREIGN KEY (vorgang_id) REFERENCES vorgaenge(id) ON DELETE CASCADE
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+  `);
+
+  await db.execute(`
     CREATE TABLE IF NOT EXISTS todos (
       id          INT AUTO_INCREMENT PRIMARY KEY,
       vorgang_id  INT NOT NULL,
@@ -243,16 +262,23 @@ export async function initSchema() {
     `);
   }
 
+  // Bewerbungsverfahren auch in bestehenden Instanzen nachreichen
+  await db.execute(`
+    INSERT IGNORE INTO vorgang_typen (\`key\`, label, color, custom, sort_order)
+    VALUES ('bewerbungsverfahren', 'Bewerbungsverfahren', NULL, 0, 15)
+  `);
+
   // Standard-Vorgangstypen seeden (nur wenn noch keine vorhanden)
   const typen = await query('SELECT COUNT(*) as n FROM vorgang_typen');
   if (typen[0].n === 0) {
     await db.execute(`
       INSERT INTO vorgang_typen (\`key\`, label, color, custom, sort_order) VALUES
-        ('personal',      'Personal',      NULL, 0, 10),
-        ('behoerde',      'Behörde',       NULL, 0, 20),
-        ('veranstaltung', 'Veranstaltung', NULL, 0, 30),
-        ('planung',       'Planung',       NULL, 0, 40),
-        ('sonstiges',     'Sonstiges',     NULL, 0, 99)
+        ('personal',           'Personal',           NULL, 0, 10),
+        ('bewerbungsverfahren','Bewerbungsverfahren',NULL, 0, 15),
+        ('behoerde',           'Behörde',            NULL, 0, 20),
+        ('veranstaltung',      'Veranstaltung',      NULL, 0, 30),
+        ('planung',            'Planung',            NULL, 0, 40),
+        ('sonstiges',          'Sonstiges',          NULL, 0, 99)
     `);
   }
 
