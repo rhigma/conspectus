@@ -8,7 +8,7 @@ import { fileURLToPath } from 'url';
 import { initSchema, query, queryOne } from './db.js';
 import { syncAllAccounts, moveToErledigt, syncErledigtStatus, vorgangFolderPath, renameVorgangFolderOnAllAccounts } from './imap.js';
 import { chat, executeAction, getTokenStats, emailEinordnen, notizAnalysieren, morgenbriefing, naturalSearchQuery } from './ai.js';
-import { ncMkdir, neueBooxNotizen, booxVerarbeitet, ncDownload, vorgangOrdner, defaultZielOrdner, ncOrdnerExistiert, BOOX_PFAD, BOOX_VERARBEITET } from './nextcloud.js';
+import { ncMkdir, ncUpload, neueBooxNotizen, booxVerarbeitet, ncDownload, vorgangOrdner, defaultZielOrdner, ncOrdnerExistiert, BOOX_PFAD, BOOX_VERARBEITET } from './nextcloud.js';
 import { createCalDavEvent, deleteCalDavEvent } from './caldav.js';
 import { diktatVerarbeiten } from './diktate.js';
 import { randomUUID, randomBytes, timingSafeEqual } from 'crypto';
@@ -93,6 +93,76 @@ app.post('/vorgaenge/:id/eintraege', async (req, res) => {
     );
     res.json({ id: result.insertId });
   } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Datei-Upload für einen Vorgang. Speichert auf Nextcloud unter
+// /Vorgaenge/<titel>/Dateien/ und legt einen vorgang_eintrag mit typ='datei' an.
+app.post('/vorgaenge/:id/dateien', upload.array('files', 10), async (req, res) => {
+  try {
+    const vid = parseInt(req.params.id);
+    const v = await queryOne('SELECT id, titel, nc_ordner FROM vorgaenge WHERE id = ?', [vid]);
+    if (!v) return res.status(404).json({ error: 'Vorgang nicht gefunden' });
+    if (!req.files?.length) return res.status(400).json({ error: 'Keine Dateien empfangen' });
+
+    let ordner = v.nc_ordner;
+    if (!ordner) {
+      ordner = await vorgangOrdner(v.titel);
+      await query('UPDATE vorgaenge SET nc_ordner = ? WHERE id = ?', [ordner, vid]);
+    }
+    const dateiOrdner = `${ordner}/Dateien`;
+    try { await ncMkdir(dateiOrdner); } catch (_) {}
+
+    const ergebnisse = [];
+    for (const f of req.files) {
+      const safe = (f.originalname || 'datei').replace(/[\/\\:*?"<>|]/g, '_');
+      // Zeitstempel-Präfix verhindert Kollisionen bei gleichnamigen Uploads.
+      const stamp = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+      const ncPath = `${dateiOrdner}/${stamp}_${safe}`;
+      await ncUpload(ncPath, f.buffer, f.mimetype || 'application/octet-stream');
+      const meta = JSON.stringify({ groesse: f.size, typ: f.mimetype });
+      const r = await query(
+        `INSERT INTO vorgang_eintraege (vorgang_id, typ, titel, inhalt, datei_pfad)
+         VALUES (?, 'datei', ?, ?, ?)`,
+        [vid, safe, meta, ncPath]
+      );
+      ergebnisse.push({ id: r.insertId, name: safe, size: f.size, typ: f.mimetype });
+    }
+    res.json({ ok: true, dateien: ergebnisse });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/vorgaenge/:id/dateien/:eintragId', async (req, res) => {
+  try {
+    const row = await queryOne(
+      `SELECT titel, datei_pfad, inhalt FROM vorgang_eintraege
+       WHERE id = ? AND vorgang_id = ? AND typ = 'datei'`,
+      [parseInt(req.params.eintragId), parseInt(req.params.id)]
+    );
+    if (!row?.datei_pfad) return res.status(404).json({ error: 'Datei nicht gefunden' });
+    const buf = await ncDownload(row.datei_pfad);
+    let mime = 'application/octet-stream';
+    try { const m = JSON.parse(row.inhalt || '{}'); if (m.typ) mime = m.typ; } catch (_) {}
+    const safeName = (row.titel || 'datei').replace(/[\r\n"]/g, '_');
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Content-Length', buf.length);
+    res.setHeader('Content-Disposition',
+      `${req.query.download ? 'attachment' : 'inline'}; filename="${safeName}"`);
+    res.end(buf);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/vorgaenge/:id/dateien/:eintragId', async (req, res) => {
+  try {
+    const row = await queryOne(
+      `SELECT id FROM vorgang_eintraege
+       WHERE id = ? AND vorgang_id = ? AND typ = 'datei'`,
+      [parseInt(req.params.eintragId), parseInt(req.params.id)]
+    );
+    if (!row) return res.status(404).json({ error: 'Nicht gefunden' });
+    // Datei bleibt auf Nextcloud (Audit-Trail); nur den Eintrag entfernen.
+    await query('DELETE FROM vorgang_eintraege WHERE id = ?', [row.id]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.put('/vorgaenge/:id', async (req, res) => {

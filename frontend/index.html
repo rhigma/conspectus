@@ -478,6 +478,20 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
 .anhang-summary{margin-top:8px;padding:8px 10px;background:var(--paper);border-left:3px solid var(--accent);font-size:12px;line-height:1.55;color:var(--ink2)}
 .anhang-actions{margin-top:8px}
 .anhang-actions .email-action-btn{font-size:11px;padding:6px 10px}
+.datei-liste{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
+.datei-row{display:flex;align-items:center;gap:6px;padding:6px 8px;background:var(--paper2);border:1px solid var(--border);border-radius:var(--r);font-size:11px}
+.datei-name{flex:1;min-width:0;color:var(--accent);text-decoration:none;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.datei-name:hover{text-decoration:underline}
+.datei-meta{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ink3);flex-shrink:0}
+.datei-dl{font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--ink3);text-decoration:none;padding:1px 6px;border:1px solid var(--border);border-radius:var(--r);flex-shrink:0}
+.datei-dl:hover{color:var(--accent);border-color:var(--accent)}
+.datei-del{background:none;border:none;color:var(--ink3);font-size:14px;cursor:pointer;padding:2px 6px;border-radius:var(--r);flex-shrink:0}
+.datei-del:hover{color:#a33;background:#fde2e2}
+[data-theme="dark"] .datei-del:hover{background:#5a2424;color:#f3b8b8}
+.datei-empty{font-size:11px;color:var(--ink3);font-family:'IBM Plex Mono',monospace;padding:4px 0;font-style:italic}
+.datei-drop{margin-top:8px;padding:14px;border:1.5px dashed var(--border);border-radius:var(--r);text-align:center;transition:all .15s}
+.datei-drop.drag{border-color:var(--accent);background:var(--accentl)}
+.datei-drop-text{font-size:11px;color:var(--ink3);font-family:'IBM Plex Mono',monospace;margin-bottom:6px;line-height:1.5}
 
 /* Antwort-Bereich */
 .reply-section{margin-top:24px;border-top:2px solid var(--paper3);padding-top:20px}
@@ -2577,6 +2591,38 @@ async function openVorgang(id) {
   } catch(e) { document.getElementById('detail-body').innerHTML = '<div class="empty">Fehler: ' + esc(e.message) + '</div>'; }
 }
 
+function renderDateienCard(v) {
+  const dateien = (v.eintraege || []).filter(e => e.typ === 'datei');
+  const liste = dateien.length
+    ? dateien.map(e => {
+        let meta = {};
+        try { meta = JSON.parse(e.inhalt || '{}'); } catch (_) {}
+        const url = `/api/vorgaenge/${v.id}/dateien/${e.id}?key=${encodeURIComponent(SECRET)}`;
+        return `
+          <div class="datei-row">
+            <a class="datei-name" href="${url}" target="_blank" rel="noopener" title="${esc(e.titel)}">${esc(e.titel)}</a>
+            <span class="datei-meta">${fmtBytes(meta.groesse || 0)}</span>
+            <a class="datei-dl" href="${url}&download=1" title="Herunterladen">↓</a>
+            <button class="datei-del" onclick="dateiLoeschen(${v.id},${e.id})" title="Aus Vorgang entfernen">×</button>
+          </div>`;
+      }).join('')
+    : '<div class="datei-empty">Noch keine Dateien</div>';
+  return `<div class="card" style="padding:14px">
+    <div class="card-header" style="margin-bottom:8px">
+      <span class="card-title">📎 Dateien</span>
+      <span class="card-count">${dateien.length}</span>
+    </div>
+    <div class="datei-liste">${liste}</div>
+    <div class="datei-drop" id="datei-drop-${v.id}"
+         ondrop="dateiDrop(event,${v.id})" ondragover="event.preventDefault();this.classList.add('drag')"
+         ondragleave="this.classList.remove('drag')">
+      <div class="datei-drop-text">Dateien hierher ziehen<br>oder</div>
+      <button class="tag-btn" onclick="document.getElementById('datei-input-${v.id}').click()">+ Auswählen</button>
+      <input type="file" id="datei-input-${v.id}" multiple style="display:none" onchange="dateiUploadFromInput(event,${v.id})"/>
+    </div>
+  </div>`;
+}
+
 function renderTodosCard(todos) {
   const groups = { q1: [], q2: [], q3: [], q4: [] };
   for (const t of todos) {
@@ -2658,6 +2704,7 @@ function renderDetail(v, todos = []) {
         <div class="card-header"><span class="card-title">Delegationen</span></div>
         ${delegHtml}
       </div>
+      ${renderDateienCard(v)}
       ${v.beschreibung ? `<div class="card" style="padding:14px">
         <div class="card-header"><span class="card-title">Beschreibung</span></div>
         <div style="font-size:12px;color:var(--ink2);line-height:1.65">${esc(v.beschreibung)}</div>
@@ -2738,6 +2785,49 @@ async function todoErledigt(id) {
       const btn = item.querySelector('.todo-check');
       if (btn) { btn.classList.add('done'); btn.textContent = '✓'; }
     }
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+}
+
+// ── DATEIEN ───────────────────────────────────────────────────────────────────
+async function dateiUpload(vid, fileList) {
+  if (!fileList?.length) return;
+  const fd = new FormData();
+  for (const f of fileList) fd.append('files', f);
+  try {
+    const r = await fetch(`/api/vorgaenge/${vid}/dateien`, {
+      method: 'POST',
+      headers: { 'X-Api-Key': SECRET },
+      body: fd,
+    });
+    if (!r.ok) {
+      const txt = await r.text();
+      throw new Error(`HTTP ${r.status}: ${txt.slice(0, 200)}`);
+    }
+    const data = await r.json();
+    toast(`${data.dateien.length} Datei${data.dateien.length === 1 ? '' : 'en'} hochgeladen ✓`, 'ok');
+    if (activeVorgangId === vid) openVorgang(vid);
+  } catch(e) {
+    toast('Fehler: ' + e.message, 'err');
+  }
+}
+
+function dateiUploadFromInput(ev, vid) {
+  dateiUpload(vid, ev.target.files);
+  ev.target.value = '';
+}
+
+function dateiDrop(ev, vid) {
+  ev.preventDefault();
+  ev.currentTarget.classList.remove('drag');
+  dateiUpload(vid, ev.dataTransfer.files);
+}
+
+async function dateiLoeschen(vid, eintragId) {
+  if (!confirm('Datei aus dem Vorgang entfernen? (Auf Nextcloud bleibt sie erhalten.)')) return;
+  try {
+    await req('DELETE', `/vorgaenge/${vid}/dateien/${eintragId}`);
+    toast('Datei entfernt', 'ok');
+    if (activeVorgangId === vid) openVorgang(vid);
   } catch(e) { toast('Fehler: ' + e.message, 'err'); }
 }
 
