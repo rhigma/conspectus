@@ -318,6 +318,26 @@ export async function speichereDiktatAudio(buffer, titel, aufgenommenAm, basisPf
   return zielPfad;
 }
 
+// ── ROCKETBOOK-PDF ───────────────────────────────────────────────────────────
+// Rocketbook-Scans landen im Format /Conspectus/Rocketbook/<YYYY>/<YYYY-MM-DD>_<safe-titel>.pdf
+export const ROCKETBOOK_BASIS_PFAD = `${NC_BASIS}/Rocketbook`;
+
+export async function speichereRocketbookPdf(buffer, titel, empfangenAm, basisPfad = ROCKETBOOK_BASIS_PFAD) {
+  const datum = empfangenAm ? new Date(empfangenAm) : new Date();
+  const jahr = String(datum.getFullYear());
+  const datumStr = datum.toISOString().slice(0, 10);
+  const stamm = safeFilenameStamm(titel);
+  const dateiname = `${datumStr}_${stamm}.pdf`;
+  const jahrPfad = `${basisPfad}/${jahr}`;
+  const zielPfad = `${jahrPfad}/${dateiname}`;
+
+  await ncMkdir(NC_BASIS).catch(() => {});
+  await ncMkdir(basisPfad).catch(e => console.warn('[Rocketbook] mkdir basis:', e.message));
+  await ncMkdir(jahrPfad).catch(e => console.warn('[Rocketbook] mkdir jahr:', e.message));
+  await ncUpload(zielPfad, buffer, 'application/pdf');
+  return zielPfad;
+}
+
 // Existenz-Prüfung eines Ordners auf Nextcloud (HEAD/PROPFIND).
 export async function ncOrdnerExistiert(pfad) {
   try {

@@ -3,6 +3,7 @@ import { simpleParser } from 'mailparser';
 import { query, queryOne } from './db.js';
 import { speichereEmailAnhang, moveEmailAnhaengeZuVorgang, vorgangOrdner } from './nextcloud.js';
 import { diktatVerarbeiten, getPlaudAbsenderPattern, cleanPlaudBody } from './diktate.js';
+import { rocketbookVerarbeiten, getRocketbookAbsenderPattern } from './rocketbook.js';
 import { getForwardingPatterns, isTrustedForwarder, parseForwardedEmail } from './forwarding.js';
 
 // Schwellwert für automatische PDF-Anhang-Analyse beim Sync.
@@ -94,8 +95,9 @@ async function syncAccount(account) {
   await client.connect();
   let newCount = 0;
 
-  // Plaud-Absender-Pattern einmal pro Sync laden — billiger als pro E-Mail.
+  // Plaud-/Rocketbook-Absender-Pattern einmal pro Sync laden — billiger als pro E-Mail.
   const plaudPattern = (await getPlaudAbsenderPattern()).toLowerCase();
+  const rocketbookPattern = (await getRocketbookAbsenderPattern()).toLowerCase();
   const forwardingPatterns = await getForwardingPatterns();
 
   try {
@@ -136,6 +138,7 @@ async function syncAccount(account) {
         let bodyText = '';
         let anhangPfade = [];
         let plaudTranscript = null;
+        let rocketbookPdf = null; // { buffer, filename } – erstes PDF für Rocketbook-Mail
         try {
           for await (const full of client.fetch(
             { uid: `${msg.uid}:${msg.uid}` },
@@ -187,6 +190,10 @@ async function syncAccount(account) {
                   && /transkript|transcript/i.test(att.filename || '')) {
                 try { plaudTranscript = att.content.toString('utf8'); } catch (e) {}
               }
+              // Rocketbook: erstes PDF merken (Body ist nur Marketing-Boilerplate).
+              if (!rocketbookPdf && att.contentType === 'application/pdf') {
+                rocketbookPdf = { buffer: att.content, filename: att.filename || 'rocketbook.pdf' };
+              }
             }
           }
         } catch (e) { /* Body optional */ }
@@ -221,6 +228,35 @@ async function syncAccount(account) {
             }
           } else {
             console.warn(`[Diktat-Mail] Leerer Body bei "${env.subject}" — als reguläre E-Mail behalten`);
+          }
+        }
+
+        // Rocketbook-Scan per E-Mail: gescannte Notizseite als PDF-Anhang.
+        // Body ist Marketing/Boilerplate und wird verworfen. Bei Erfolg wandert
+        // die Mail in den IMAP-"Erledigt"-Ordner, kein DB-Insert.
+        if (rocketbookPattern && fromEmail.includes(rocketbookPattern)) {
+          if (rocketbookPdf) {
+            try {
+              await rocketbookVerarbeiten({
+                titel: env.subject || 'Rocketbook ohne Betreff',
+                pdfBuffer: rocketbookPdf.buffer,
+                dateiname: rocketbookPdf.filename,
+                empfangenAm: env.date ? new Date(env.date).toISOString() : new Date().toISOString(),
+              });
+              try { await client.mailboxCreate('Erledigt'); } catch (e) { /* exists */ }
+              try {
+                await client.messageMove({ uid: `${msg.uid}:${msg.uid}` }, 'Erledigt', { uid: true });
+              } catch (e) {
+                console.warn('[Rocketbook-Mail] Move fehlgeschlagen:', e.message);
+              }
+              console.log(`[Rocketbook-Mail] "${env.subject}" → als Notiz verarbeitet`);
+              continue;
+            } catch (e) {
+              console.error('[Rocketbook-Mail] Verarbeitung fehlgeschlagen, falle auf reguläre Mail-Behandlung zurück:', e.message);
+              // Fall-through: lieber als E-Mail behalten als verlieren.
+            }
+          } else {
+            console.warn(`[Rocketbook-Mail] Kein PDF-Anhang bei "${env.subject}" — als reguläre E-Mail behalten`);
           }
         }
 
