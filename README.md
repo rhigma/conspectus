@@ -45,11 +45,12 @@ src/
   server.js       – Express-API, alle Endpunkte
   db.js           – MariaDB-Schema und Query-Helpers
   ai.js           – Claude-Integration, Systemkontext, Aktionen
-  imap.js         – IMAP-Sync (mehrere Konten, Two-Pass)
+  imap.js         – IMAP-Sync (mehrere Konten, Two-Pass), Plaud-Mail-Erkennung
   caldav.js       – CalDAV-Sync + Schreiben (VEVENT PUT/DELETE)
   nextcloud.js    – WebDAV, Boox-Sync, URL-Encoding für Umlaute
   smtp.js         – E-Mail-Antworten senden
   pushover.js     – Push-Benachrichtigungen (Token aus DB oder .env)
+  diktate.js      – Plaud-Diktat-Verarbeitung (Webhook + E-Mail), KI-Analyse, Vorgangs-Zuordnung
 frontend/
   index.html      – Komplettes Frontend (Single File)
 scripts/
@@ -98,7 +99,7 @@ scripts/
 
 **Notizen (PDF-Tablets + Plaud-Diktiergerät)**
 - PDFs (Boox / iPad / etc.) werden automatisch stündlich aus Nextcloud geholt
-- Plaud-Diktate kommen per Webhook (Zapier → POST /diktate, eigenes Secret in den Einstellungen generierbar)
+- Plaud-Diktate kommen wahlweise per E-Mail-Weiterleitung (Absender-Pattern in Einstellungen, Default `@plaud.ai`) oder per Webhook (z. B. Make.com / IFTTT → POST /diktate, eigenes Secret in den Einstellungen generierbar). Erkannte Plaud-Mails werden automatisch in den IMAP-Ordner „Erledigt" verschoben und tauchen nicht im Posteingang auf.
 - Claude transkribiert Handschrift / bereinigt Audio-Transkripte und extrahiert Termine/Aufgaben/Delegationen
 - Vorgang-Zuordnung mit Detailansicht und Audio-Player für Diktate
 - Verarbeitete PDFs werden in den Unterordner `…_verarbeitet` verschoben; Diktat-MP3s landen unter `/Diktate/<Jahr>/`

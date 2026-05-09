@@ -2,6 +2,7 @@ import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { query, queryOne } from './db.js';
 import { speichereAnhang } from './nextcloud.js';
+import { diktatVerarbeiten, getPlaudAbsenderPattern, cleanPlaudBody } from './diktate.js';
 
 const MAX_EMAILS = 200;
 const VORGAENGE_ROOT = 'Vorgänge';
@@ -88,6 +89,9 @@ async function syncAccount(account) {
   await client.connect();
   let newCount = 0;
 
+  // Plaud-Absender-Pattern einmal pro Sync laden — billiger als pro E-Mail.
+  const plaudPattern = (await getPlaudAbsenderPattern()).toLowerCase();
+
   try {
     const lock = await client.getMailboxLock('INBOX');
     try {
@@ -152,6 +156,37 @@ async function syncAccount(account) {
         } catch (e) { /* Body optional */ }
 
         const env = msg.envelope;
+        const fromEmail = (env.from?.[0]?.address || '').toLowerCase();
+
+        // Plaud-Diktat per E-Mail: vor dem regulären INSERT abfangen.
+        // Bei Erfolg wandert die Mail in den IMAP-"Erledigt"-Ordner, kein DB-Insert.
+        if (plaudPattern && fromEmail.includes(plaudPattern)) {
+          const transkript = cleanPlaudBody(bodyText);
+          if (transkript) {
+            try {
+              await diktatVerarbeiten({
+                titel: env.subject || 'Diktat ohne Betreff',
+                transkript,
+                aufgenommenAm: env.date ? new Date(env.date).toISOString() : new Date().toISOString(),
+                quelle: 'plaud_email',
+              });
+              try { await client.mailboxCreate('Erledigt'); } catch (e) { /* exists */ }
+              try {
+                await client.messageMove({ uid: `${msg.uid}:${msg.uid}` }, 'Erledigt', { uid: true });
+              } catch (e) {
+                console.warn('[Diktat-Mail] Move fehlgeschlagen:', e.message);
+              }
+              console.log(`[Diktat-Mail] "${env.subject}" → als Diktat verarbeitet`);
+              continue;
+            } catch (e) {
+              console.error('[Diktat-Mail] Verarbeitung fehlgeschlagen, falle auf reguläre Mail-Behandlung zurück:', e.message);
+              // Fall-through: lieber als E-Mail behalten als verlieren.
+            }
+          } else {
+            console.warn(`[Diktat-Mail] Leerer Body bei "${env.subject}" — als reguläre E-Mail behalten`);
+          }
+        }
+
         await query(
           `INSERT IGNORE INTO emails
             (account_id, uid, message_id, from_name, from_email, subject, body_text, date, unread, anhang_pfade, imap_mailbox)

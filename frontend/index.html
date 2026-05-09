@@ -993,11 +993,35 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
           </div>
         </div>
 
-        <!-- PLAUD / DIKTIERGERÄT (Webhook-Secret) -->
+        <!-- PLAUD / DIKTIERGERÄT -->
         <div class="card">
-          <div class="card-header"><span class="card-title">🎙 Plaud-Diktiergerät (Zapier)</span></div>
+          <div class="card-header"><span class="card-title">🎙 Plaud-Diktiergerät</span></div>
+          <div style="font-size:11px;color:var(--ink2);line-height:1.65;margin-bottom:14px">
+            Diktate können auf zwei Wegen ankommen — beide laufen parallel.
+          </div>
+
+          <!-- Variante 1: E-Mail-Weiterleitung -->
+          <div style="font-size:11px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.06em;color:var(--ink2);margin-bottom:8px">A · Per E-Mail-Weiterleitung</div>
           <div style="font-size:11px;color:var(--ink2);line-height:1.65;margin-bottom:10px">
-            Webhook für eingehende Diktate. Plaud → Zapier → POST an diese URL mit dem Secret als Header
+            Plaud-Mails an dein IMAP-Konto weiterleiten. Conspectus erkennt sie am Absender, verarbeitet sie wie ein Diktat und verschiebt sie automatisch in den IMAP-Ordner „Erledigt" (sie tauchen also nicht im Posteingang auf).
+          </div>
+          <div>
+            <div style="font-size:10px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.1em;color:var(--ink3);margin-bottom:4px">Absender-Pattern</div>
+            <div style="display:flex;gap:6px">
+              <input id="s-diktat-absender" type="text" placeholder="@plaud.ai" style="flex:1;padding:7px 8px;border:1px solid var(--border);border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:11px;background:var(--paper);color:var(--ink)"/>
+              <button onclick="saveDiktatAbsender()" style="padding:7px 12px;background:var(--accent);color:#fff;border:none;border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:10px;cursor:pointer;white-space:nowrap">Speichern</button>
+            </div>
+            <div style="margin-top:6px;font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--ink3);line-height:1.5">
+              Substring-Match gegen die Absender-Adresse, case-insensitiv. Default <code style="background:var(--paper2);padding:1px 4px;border-radius:2px">@plaud.ai</code> trifft alle Plaud-Adressen; verschärfen geht z.&nbsp;B. mit <code style="background:var(--paper2);padding:1px 4px;border-radius:2px">noreply@plaud.ai</code>.
+            </div>
+          </div>
+
+          <div style="margin:18px 0 14px;border-top:1px dashed var(--border)"></div>
+
+          <!-- Variante 2: Webhook -->
+          <div style="font-size:11px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.06em;color:var(--ink2);margin-bottom:8px">B · Per Webhook (z.&nbsp;B. Make.com, IFTTT)</div>
+          <div style="font-size:11px;color:var(--ink2);line-height:1.65;margin-bottom:10px">
+            HTTP-POST an die unten stehende URL mit dem Secret als Header
             <code style="font-family:'IBM Plex Mono',monospace;background:var(--paper2);padding:1px 4px;border-radius:2px">X-Webhook-Secret</code>.
           </div>
           <div style="display:grid;gap:8px">
@@ -2830,6 +2854,7 @@ async function loadEinstellungen() {
     loadBriefingTime(),
     loadPdfNotizOrdner(),
     loadDiktatSecret(),
+    loadDiktatAbsender(),
   ]);
 }
 
@@ -2995,6 +3020,24 @@ async function deleteDiktatSecret() {
     await req('DELETE', '/diktat-webhook-secret');
     setDiktatSecretUI('');
     toast('Webhook deaktiviert', 'ok');
+  } catch(e) {
+    toast('Fehler: ' + e.message, 'err');
+  }
+}
+
+// ── DIKTAT-ABSENDER (E-Mail-Erkennung) ────────────────────────────────────────
+async function loadDiktatAbsender() {
+  try {
+    const s = await req('GET', '/settings');
+    document.getElementById('s-diktat-absender').value = s.diktat_email_absender || '';
+  } catch(_) {}
+}
+
+async function saveDiktatAbsender() {
+  const v = document.getElementById('s-diktat-absender').value.trim();
+  try {
+    await req('PUT', '/settings/diktat_email_absender', { value: v });
+    toast(v ? `Absender-Pattern gespeichert: ${v}` : 'Absender zurückgesetzt — wieder Default @plaud.ai', 'ok');
   } catch(e) {
     toast('Fehler: ' + e.message, 'err');
   }

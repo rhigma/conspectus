@@ -7,11 +7,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initSchema, query, queryOne } from './db.js';
 import { syncAllAccounts, moveToErledigt, syncErledigtStatus, vorgangFolderPath, renameVorgangFolderOnAllAccounts } from './imap.js';
-import { chat, executeAction, getTokenStats, emailEinordnen, notizAnalysieren, diktatAnalysieren, morgenbriefing, naturalSearchQuery } from './ai.js';
-import { ncMkdir, neueBooxNotizen, booxVerarbeitet, ncDownload, vorgangOrdner, defaultZielOrdner, ncOrdnerExistiert, speichereDiktatAudio, BOOX_PFAD, BOOX_VERARBEITET } from './nextcloud.js';
+import { chat, executeAction, getTokenStats, emailEinordnen, notizAnalysieren, morgenbriefing, naturalSearchQuery } from './ai.js';
+import { ncMkdir, neueBooxNotizen, booxVerarbeitet, ncDownload, vorgangOrdner, defaultZielOrdner, ncOrdnerExistiert, BOOX_PFAD, BOOX_VERARBEITET } from './nextcloud.js';
 import { createCalDavEvent, deleteCalDavEvent } from './caldav.js';
+import { diktatVerarbeiten } from './diktate.js';
 import { randomUUID, randomBytes, timingSafeEqual } from 'crypto';
-import fetch from 'node-fetch';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app    = express();
@@ -890,109 +890,7 @@ app.delete('/diktat-webhook-secret', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-function safeFilename(s) {
-  return (s || '').replace(/[\/\\:*?"<>|]/g, '_').slice(0, 120);
-}
-
-async function diktatVerarbeiten({ titel, transkript, aufgenommenAm, audioUrl, dauerSekunden, zusammenfassungPlaud }) {
-  // 1) Audio (optional) auf Nextcloud sichern, bevor wir die Analyse starten —
-  // damit der Datei-Pfad in den Eintrag wandern kann.
-  let audioPfad = null;
-  if (audioUrl) {
-    try {
-      const r = await fetch(audioUrl);
-      if (r.ok) {
-        const buf = Buffer.from(await r.arrayBuffer());
-        audioPfad = await speichereDiktatAudio(buf, titel, aufgenommenAm);
-      } else {
-        console.warn('[Diktat] Audio-Download HTTP', r.status);
-      }
-    } catch (e) {
-      console.warn('[Diktat] Audio-Download fehlgeschlagen:', e.message);
-    }
-  }
-
-  // 2) KI-Analyse (text-only, MODEL_FAST)
-  const analyse = await diktatAnalysieren(transkript, aufgenommenAm);
-
-  // 3) Vorschläge normalisieren (gleiche Form wie booxNotiz: status/ref_id)
-  const neueVorschlaege = normVorschlaege(analyse);
-
-  // 4) Vorgang auflösen: explizite ID → Titel-Match → neu anlegen → null
-  let vorgangId = analyse.vorgang_id ? parseInt(analyse.vorgang_id) : null;
-  if (!vorgangId && analyse.vorgang_titel) {
-    const vorhanden = await queryOne(
-      'SELECT id FROM vorgaenge WHERE titel LIKE ? LIMIT 1',
-      [`%${analyse.vorgang_titel}%`]
-    );
-    if (vorhanden) {
-      vorgangId = vorhanden.id;
-    } else {
-      const ncPfad = await vorgangOrdner(analyse.vorgang_titel).catch(() => null);
-      const result = await query(
-        'INSERT INTO vorgaenge (titel, typ, beschreibung, nc_ordner) VALUES (?,?,?,?)',
-        [analyse.vorgang_titel, 'sonstiges', `Aus Diktat: ${titel}`, ncPfad]
-      );
-      vorgangId = result.insertId;
-    }
-  }
-
-  if (!vorgangId) {
-    // vorgang_eintraege.vorgang_id ist NOT NULL — wir brauchen also einen Auffang-Vorgang.
-    const sammel = await queryOne(
-      `SELECT id FROM vorgaenge WHERE titel = 'Diktate ohne Zuordnung' LIMIT 1`
-    );
-    if (sammel) {
-      vorgangId = sammel.id;
-    } else {
-      const ncPfad = await vorgangOrdner('Diktate ohne Zuordnung').catch(() => null);
-      const result = await query(
-        `INSERT INTO vorgaenge (titel, typ, beschreibung, nc_ordner)
-         VALUES ('Diktate ohne Zuordnung', 'sonstiges', 'Sammelvorgang für nicht zugeordnete Diktate', ?)`,
-        [ncPfad]
-      );
-      vorgangId = result.insertId;
-    }
-  }
-
-  // 5) inhalt-JSON zusammenstellen — Plaud-Metadaten an die Analyse anhängen
-  const inhalt = {
-    ...neueVorschlaege,
-    aufgenommen_am: aufgenommenAm || null,
-    dauer_sekunden: dauerSekunden || null,
-    audio_pfad: audioPfad,
-    quelle: 'plaud',
-    zusammenfassung_plaud: zusammenfassungPlaud || null,
-  };
-
-  const eintragTitel = `Diktat: ${safeFilename(titel)}`;
-  const result = await query(
-    'INSERT INTO vorgang_eintraege (vorgang_id, typ, titel, inhalt, datei_pfad) VALUES (?,?,?,?,?)',
-    [vorgangId, 'notiz', eintragTitel, JSON.stringify(inhalt), audioPfad]
-  );
-
-  // 6) Pushover (best-effort)
-  try {
-    const offen = neueVorschlaege.aufgaben.length + neueVorschlaege.delegationen.length + neueVorschlaege.termine.length;
-    const vorgang = await queryOne('SELECT titel FROM vorgaenge WHERE id = ?', [vorgangId]);
-    const { pushDiktatVerarbeitet } = await import('./pushover.js');
-    await pushDiktatVerarbeitet(titel, vorgang?.titel || null, analyse.zusammenfassung || '', offen);
-  } catch (e) {
-    console.warn('[Diktat] Push fehlgeschlagen:', e.message);
-  }
-
-  const offen = neueVorschlaege.aufgaben.length + neueVorschlaege.delegationen.length + neueVorschlaege.termine.length;
-  console.log(`[Diktat] "${titel}" → Vorgang #${vorgangId}, ${offen} Vorschläge, audio=${audioPfad ? 'ja' : 'nein'}`);
-  return {
-    eintragId: result.insertId,
-    vorgangId,
-    audioPfad,
-    vorschlaege: offen,
-    analyse: inhalt,
-  };
-}
-
-// Webhook für Plaud (über Zapier). Eigene Authentifizierung via X-Webhook-Secret.
+// Webhook für Plaud (über Zapier o.ä.). Eigene Authentifizierung via X-Webhook-Secret.
 app.post('/diktate', async (req, res) => {
   try {
     const expected = await getDiktatSecret();
