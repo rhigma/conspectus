@@ -7,10 +7,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initSchema, query, queryOne } from './db.js';
 import { syncAllAccounts, moveToErledigt, syncErledigtStatus, vorgangFolderPath, renameVorgangFolderOnAllAccounts } from './imap.js';
-import { chat, executeAction, getTokenStats, emailEinordnen, notizAnalysieren, morgenbriefing, naturalSearchQuery } from './ai.js';
-import { ncMkdir, neueBooxNotizen, booxVerarbeitet, ncDownload, vorgangOrdner, defaultZielOrdner, ncOrdnerExistiert, BOOX_PFAD, BOOX_VERARBEITET } from './nextcloud.js';
+import { chat, executeAction, getTokenStats, emailEinordnen, notizAnalysieren, diktatAnalysieren, morgenbriefing, naturalSearchQuery } from './ai.js';
+import { ncMkdir, neueBooxNotizen, booxVerarbeitet, ncDownload, vorgangOrdner, defaultZielOrdner, ncOrdnerExistiert, speichereDiktatAudio, BOOX_PFAD, BOOX_VERARBEITET } from './nextcloud.js';
 import { createCalDavEvent, deleteCalDavEvent } from './caldav.js';
-import { randomUUID } from 'crypto';
+import { randomUUID, randomBytes, timingSafeEqual } from 'crypto';
+import fetch from 'node-fetch';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app    = express();
@@ -24,6 +25,8 @@ app.use(express.static(path.join(__dirname, '../frontend')));
 // ── Auth ──────────────────────────────────────────────────────────────────────
 app.use((req, res, next) => {
   if (req.path === '/health') return next();
+  // /diktate validiert sein eigenes Webhook-Secret weiter unten
+  if (req.path === '/diktate' && req.method === 'POST') return next();
   const key = req.headers['x-api-key'] || req.query.key;
   if (CURRENT_SECRET && key !== CURRENT_SECRET) return res.status(401).json({ error: 'Unauthorized' });
   next();
@@ -717,13 +720,15 @@ app.get('/boox/status', async (req, res) => {
   try {
     const eintraege = await query(
       `SELECT id, vorgang_id, titel, inhalt, datei_pfad, created_at
-       FROM vorgang_eintraege WHERE titel LIKE 'Boox:%' ORDER BY created_at DESC LIMIT 5`
+       FROM vorgang_eintraege
+       WHERE titel LIKE 'Boox:%' OR titel LIKE 'Diktat:%'
+       ORDER BY created_at DESC LIMIT 5`
     );
     res.json(eintraege);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Übersicht: alle verarbeiteten Boox-Notizen + verlinkter Vorgang
+// Übersicht: alle verarbeiteten Notizen (Boox-PDFs und Plaud-Diktate) + verlinkter Vorgang
 app.get('/boox/notizen', async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit) || 50, 200);
@@ -732,7 +737,7 @@ app.get('/boox/notizen', async (req, res) => {
               v.titel AS vorgang_titel, v.status AS vorgang_status
          FROM vorgang_eintraege e
          LEFT JOIN vorgaenge v ON v.id = e.vorgang_id
-        WHERE e.titel LIKE 'Boox:%'
+        WHERE e.titel LIKE 'Boox:%' OR e.titel LIKE 'Diktat:%'
         ORDER BY e.created_at DESC
         LIMIT ?`,
       [limit]
@@ -741,16 +746,17 @@ app.get('/boox/notizen', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Vorschlag aus Boox-Notiz übernehmen oder verwerfen.
+// Vorschlag aus Notiz (Boox-PDF oder Diktat) übernehmen oder verwerfen.
 // Body: { typ: 'aufgabe'|'delegation'|'termin', index: N, daten?: {...} }
 async function loadBooxEintrag(eintragId) {
   const row = await queryOne(
-    'SELECT id, vorgang_id, inhalt FROM vorgang_eintraege WHERE id = ? AND titel LIKE ?',
-    [eintragId, 'Boox:%']
+    `SELECT id, vorgang_id, inhalt FROM vorgang_eintraege
+     WHERE id = ? AND (titel LIKE 'Boox:%' OR titel LIKE 'Diktat:%')`,
+    [eintragId]
   );
-  if (!row) throw new Error('Boox-Eintrag nicht gefunden');
+  if (!row) throw new Error('Notiz-Eintrag nicht gefunden');
   let analyse;
-  try { analyse = JSON.parse(row.inhalt); } catch { throw new Error('Boox-Eintrag: JSON kaputt'); }
+  try { analyse = JSON.parse(row.inhalt); } catch { throw new Error('Notiz-Eintrag: JSON kaputt'); }
   return { row, analyse };
 }
 
@@ -849,6 +855,199 @@ app.post('/boox/:eintragId/reset', async (req, res) => {
     await query('UPDATE vorgang_eintraege SET inhalt = ? WHERE id = ?', [JSON.stringify(analyse), eintragId]);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── DIKTATE (Plaud / Webhook) ─────────────────────────────────────────────────
+const DIKTAT_SECRET_KEY = 'diktat_webhook_secret';
+
+async function getDiktatSecret() {
+  const row = await queryOne('SELECT value FROM settings WHERE `key` = ?', [DIKTAT_SECRET_KEY]);
+  return row?.value || null;
+}
+
+app.get('/diktat-webhook-secret', async (req, res) => {
+  try {
+    const value = await getDiktatSecret();
+    res.json({ value });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/diktat-webhook-secret/generieren', async (req, res) => {
+  try {
+    const secret = randomBytes(32).toString('base64url');
+    await query(
+      'INSERT INTO settings (`key`, value) VALUES (?,?) ON DUPLICATE KEY UPDATE value = VALUES(value)',
+      [DIKTAT_SECRET_KEY, secret]
+    );
+    res.json({ value: secret });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/diktat-webhook-secret', async (req, res) => {
+  try {
+    await query('DELETE FROM settings WHERE `key` = ?', [DIKTAT_SECRET_KEY]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+function safeFilename(s) {
+  return (s || '').replace(/[\/\\:*?"<>|]/g, '_').slice(0, 120);
+}
+
+async function diktatVerarbeiten({ titel, transkript, aufgenommenAm, audioUrl, dauerSekunden, zusammenfassungPlaud }) {
+  // 1) Audio (optional) auf Nextcloud sichern, bevor wir die Analyse starten —
+  // damit der Datei-Pfad in den Eintrag wandern kann.
+  let audioPfad = null;
+  if (audioUrl) {
+    try {
+      const r = await fetch(audioUrl);
+      if (r.ok) {
+        const buf = Buffer.from(await r.arrayBuffer());
+        audioPfad = await speichereDiktatAudio(buf, titel, aufgenommenAm);
+      } else {
+        console.warn('[Diktat] Audio-Download HTTP', r.status);
+      }
+    } catch (e) {
+      console.warn('[Diktat] Audio-Download fehlgeschlagen:', e.message);
+    }
+  }
+
+  // 2) KI-Analyse (text-only, MODEL_FAST)
+  const analyse = await diktatAnalysieren(transkript, aufgenommenAm);
+
+  // 3) Vorschläge normalisieren (gleiche Form wie booxNotiz: status/ref_id)
+  const neueVorschlaege = normVorschlaege(analyse);
+
+  // 4) Vorgang auflösen: explizite ID → Titel-Match → neu anlegen → null
+  let vorgangId = analyse.vorgang_id ? parseInt(analyse.vorgang_id) : null;
+  if (!vorgangId && analyse.vorgang_titel) {
+    const vorhanden = await queryOne(
+      'SELECT id FROM vorgaenge WHERE titel LIKE ? LIMIT 1',
+      [`%${analyse.vorgang_titel}%`]
+    );
+    if (vorhanden) {
+      vorgangId = vorhanden.id;
+    } else {
+      const ncPfad = await vorgangOrdner(analyse.vorgang_titel).catch(() => null);
+      const result = await query(
+        'INSERT INTO vorgaenge (titel, typ, beschreibung, nc_ordner) VALUES (?,?,?,?)',
+        [analyse.vorgang_titel, 'sonstiges', `Aus Diktat: ${titel}`, ncPfad]
+      );
+      vorgangId = result.insertId;
+    }
+  }
+
+  if (!vorgangId) {
+    // vorgang_eintraege.vorgang_id ist NOT NULL — wir brauchen also einen Auffang-Vorgang.
+    const sammel = await queryOne(
+      `SELECT id FROM vorgaenge WHERE titel = 'Diktate ohne Zuordnung' LIMIT 1`
+    );
+    if (sammel) {
+      vorgangId = sammel.id;
+    } else {
+      const ncPfad = await vorgangOrdner('Diktate ohne Zuordnung').catch(() => null);
+      const result = await query(
+        `INSERT INTO vorgaenge (titel, typ, beschreibung, nc_ordner)
+         VALUES ('Diktate ohne Zuordnung', 'sonstiges', 'Sammelvorgang für nicht zugeordnete Diktate', ?)`,
+        [ncPfad]
+      );
+      vorgangId = result.insertId;
+    }
+  }
+
+  // 5) inhalt-JSON zusammenstellen — Plaud-Metadaten an die Analyse anhängen
+  const inhalt = {
+    ...neueVorschlaege,
+    aufgenommen_am: aufgenommenAm || null,
+    dauer_sekunden: dauerSekunden || null,
+    audio_pfad: audioPfad,
+    quelle: 'plaud',
+    zusammenfassung_plaud: zusammenfassungPlaud || null,
+  };
+
+  const eintragTitel = `Diktat: ${safeFilename(titel)}`;
+  const result = await query(
+    'INSERT INTO vorgang_eintraege (vorgang_id, typ, titel, inhalt, datei_pfad) VALUES (?,?,?,?,?)',
+    [vorgangId, 'notiz', eintragTitel, JSON.stringify(inhalt), audioPfad]
+  );
+
+  // 6) Pushover (best-effort)
+  try {
+    const offen = neueVorschlaege.aufgaben.length + neueVorschlaege.delegationen.length + neueVorschlaege.termine.length;
+    const vorgang = await queryOne('SELECT titel FROM vorgaenge WHERE id = ?', [vorgangId]);
+    const { pushDiktatVerarbeitet } = await import('./pushover.js');
+    await pushDiktatVerarbeitet(titel, vorgang?.titel || null, analyse.zusammenfassung || '', offen);
+  } catch (e) {
+    console.warn('[Diktat] Push fehlgeschlagen:', e.message);
+  }
+
+  const offen = neueVorschlaege.aufgaben.length + neueVorschlaege.delegationen.length + neueVorschlaege.termine.length;
+  console.log(`[Diktat] "${titel}" → Vorgang #${vorgangId}, ${offen} Vorschläge, audio=${audioPfad ? 'ja' : 'nein'}`);
+  return {
+    eintragId: result.insertId,
+    vorgangId,
+    audioPfad,
+    vorschlaege: offen,
+    analyse: inhalt,
+  };
+}
+
+// Webhook für Plaud (über Zapier). Eigene Authentifizierung via X-Webhook-Secret.
+app.post('/diktate', async (req, res) => {
+  try {
+    const expected = await getDiktatSecret();
+    if (!expected) {
+      return res.status(503).json({ error: 'Webhook-Secret nicht eingerichtet' });
+    }
+    const provided = req.headers['x-webhook-secret'] || '';
+    const a = Buffer.from(String(provided));
+    const b = Buffer.from(expected);
+    if (a.length !== b.length || !timingSafeEqual(a, b)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { titel, transkript, aufgenommen_am, audio_url, dauer_sekunden, summary } = req.body || {};
+    if (!titel || typeof titel !== 'string') return res.status(400).json({ error: 'Pflichtfeld titel fehlt' });
+    if (!transkript || typeof transkript !== 'string') return res.status(400).json({ error: 'Pflichtfeld transkript fehlt' });
+    if (!aufgenommen_am) return res.status(400).json({ error: 'Pflichtfeld aufgenommen_am fehlt' });
+
+    const result = await diktatVerarbeiten({
+      titel: titel.trim(),
+      transkript,
+      aufgenommenAm: aufgenommen_am,
+      audioUrl: audio_url || null,
+      dauerSekunden: dauer_sekunden || null,
+      zusammenfassungPlaud: summary || null,
+    });
+    res.json({
+      ok: true,
+      eintrag_id: result.eintragId,
+      vorgang_id: result.vorgangId,
+      vorschlaege: result.vorschlaege,
+    });
+  } catch (e) {
+    console.error('[Diktat] Webhook-Fehler:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Audio einer Diktat-Notiz streamen (durchgereicht von Nextcloud, mit App-Auth).
+app.get('/diktate/:eintragId/audio', async (req, res) => {
+  try {
+    const row = await queryOne(
+      `SELECT datei_pfad FROM vorgang_eintraege
+       WHERE id = ? AND titel LIKE 'Diktat:%'`,
+      [req.params.eintragId]
+    );
+    if (!row?.datei_pfad) return res.status(404).json({ error: 'Audio nicht gefunden' });
+    const buf = await ncDownload(row.datei_pfad);
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Content-Length', buf.length);
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.end(buf);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ── CRON ──────────────────────────────────────────────────────────────────────

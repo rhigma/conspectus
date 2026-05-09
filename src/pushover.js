@@ -95,6 +95,18 @@ export async function pushBooxVerarbeitet(dateiname, vorgangTitel, zusammenfassu
   });
 }
 
+export async function pushDiktatVerarbeitet(titel, vorgangTitel, zusammenfassung, offen) {
+  const zeilen = [
+    vorgangTitel ? `Vorgang: ${vorgangTitel}` : 'Kein Vorgang zugeordnet',
+    offen ? `${offen} Vorschläge offen` : '',
+    zusammenfassung ? zusammenfassung.slice(0, 180) : '',
+  ].filter(Boolean);
+  return push(`🎙 Diktat: ${titel}`, zeilen.join('\n'), {
+    url: process.env.APP_URL || '',
+    url_title: 'Ansehen',
+  });
+}
+
 export async function pushTerminErinnerung(titel, startTime, location) {
   const dt = new Date(startTime).toLocaleString('de-DE', {
     weekday: 'short', hour: '2-digit', minute: '2-digit'

@@ -665,7 +665,7 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
       <div class="nav-item" id="n-vorgaenge" onclick="showView('vorgaenge')"><span class="nav-icon">◈</span>Vorgänge</div>
       <div class="nav-item" id="n-emails" onclick="showView('emails')"><span class="nav-icon">✉</span>E-Mails</div>
       <div class="nav-item" id="n-kalender" onclick="showView('kalender')"><span class="nav-icon">◷</span>Kalender</div>
-      <div class="nav-item" id="n-boox" onclick="showView('boox')"><span class="nav-icon">✎</span>PDF-Notizen</div>
+      <div class="nav-item" id="n-boox" onclick="showView('boox')"><span class="nav-icon">✎</span>Notizen</div>
       <div class="nav-item" id="n-chat" onclick="showView('chat')"><span class="nav-icon">◻</span>KI-Assistent</div>
       <div class="nav-item" id="n-einstellungen" onclick="showView('einstellungen')"><span class="nav-icon">⚙</span>Einstellungen</div>
     </div>
@@ -800,12 +800,12 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
     <!-- KALENDER HOVER-TOOLTIP -->
     <div class="cal-tooltip" id="cal-tooltip"></div>
 
-    <!-- BOOX-NOTIZEN -->
+    <!-- NOTIZEN (PDF-Notizen + Diktate) -->
     <div class="view" id="v-boox">
       <div class="vorgaenge-toolbar">
-        <h2>PDF-Notizen</h2>
+        <h2>Notizen</h2>
         <input class="search-input" id="boox-search" placeholder="Suchen…" oninput="renderBoox()" />
-        <button class="filter-btn" id="boox-sync-btn" onclick="syncBoox()">↺ Jetzt synchronisieren</button>
+        <button class="filter-btn" id="boox-sync-btn" onclick="syncBoox()">↺ PDF-Sync</button>
         <span id="boox-count" style="font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace"></span>
       </div>
       <div id="boox-list" class="vorgaenge-list"><div class="loading-row"><div class="spin"></div>Lade…</div></div>
@@ -993,6 +993,45 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
           </div>
         </div>
 
+        <!-- PLAUD / DIKTIERGERÄT (Webhook-Secret) -->
+        <div class="card">
+          <div class="card-header"><span class="card-title">🎙 Plaud-Diktiergerät (Zapier)</span></div>
+          <div style="font-size:11px;color:var(--ink2);line-height:1.65;margin-bottom:10px">
+            Webhook für eingehende Diktate. Plaud → Zapier → POST an diese URL mit dem Secret als Header
+            <code style="font-family:'IBM Plex Mono',monospace;background:var(--paper2);padding:1px 4px;border-radius:2px">X-Webhook-Secret</code>.
+          </div>
+          <div style="display:grid;gap:8px">
+            <div>
+              <div style="font-size:10px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.1em;color:var(--ink3);margin-bottom:4px">Webhook-URL</div>
+              <div style="display:flex;gap:6px">
+                <input id="s-diktat-url" type="text" readonly style="flex:1;padding:7px 8px;border:1px solid var(--border);border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:11px;background:var(--paper2);color:var(--ink)"/>
+                <button onclick="copyDiktatUrl()" title="Kopieren" style="padding:7px 12px;background:none;border:1px solid var(--border);border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:10px;cursor:pointer;color:var(--ink2)">📋</button>
+              </div>
+            </div>
+            <div>
+              <div style="font-size:10px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.1em;color:var(--ink3);margin-bottom:4px">Secret</div>
+              <div style="display:flex;gap:6px;align-items:center">
+                <input id="s-diktat-secret" type="password" readonly placeholder="(noch nicht eingerichtet)" style="flex:1;padding:7px 8px;border:1px solid var(--border);border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:11px;background:var(--paper);color:var(--ink)"/>
+                <button onclick="toggleDiktatSecret()" id="s-diktat-toggle" title="Anzeigen/Verbergen" style="padding:7px 10px;background:none;border:1px solid var(--border);border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:10px;cursor:pointer;color:var(--ink2)">👁</button>
+                <button onclick="copyDiktatSecret()" title="Kopieren" style="padding:7px 10px;background:none;border:1px solid var(--border);border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:10px;cursor:pointer;color:var(--ink2)">📋</button>
+              </div>
+            </div>
+            <div style="display:flex;gap:6px;margin-top:4px">
+              <button onclick="generateDiktatSecret()" id="s-diktat-gen" style="flex:1;padding:8px 12px;background:var(--accent);color:#fff;border:none;border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:11px;cursor:pointer">🔄 Neu generieren</button>
+              <button onclick="deleteDiktatSecret()" id="s-diktat-del" style="padding:8px 12px;background:none;border:1px solid var(--border);border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:11px;cursor:pointer;color:var(--ink2)">Deaktivieren</button>
+            </div>
+          </div>
+          <div style="margin-top:12px;font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--ink3);line-height:1.6">
+            Erwartete Pflichtfelder im JSON-Body:<br>
+            <code style="background:var(--paper2);padding:1px 4px;border-radius:2px">titel</code> ·
+            <code style="background:var(--paper2);padding:1px 4px;border-radius:2px">transkript</code> ·
+            <code style="background:var(--paper2);padding:1px 4px;border-radius:2px">aufgenommen_am</code><br>
+            Optional: <code style="background:var(--paper2);padding:1px 4px;border-radius:2px">audio_url</code>,
+            <code style="background:var(--paper2);padding:1px 4px;border-radius:2px">dauer_sekunden</code>,
+            <code style="background:var(--paper2);padding:1px 4px;border-radius:2px">summary</code>
+          </div>
+        </div>
+
         <!-- BRIEFING-ZEIT -->
         <div class="card">
           <div class="card-header"><span class="card-title">☀ Morgen-Briefing</span></div>
@@ -1059,7 +1098,7 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
             · Briefing täglich 6:30 Uhr<br>
             · Überfällige Delegationen täglich 8:00 Uhr<br>
             · Termin-Erinnerungen 30 Min. vorher<br>
-            · Neue PDF-Notizen nach Verarbeitung
+            · Neue Notizen (PDF / Diktat) nach Verarbeitung
           </div>
         </div>
 
@@ -2790,6 +2829,7 @@ async function loadEinstellungen() {
     loadPushoverSettings(),
     loadBriefingTime(),
     loadPdfNotizOrdner(),
+    loadDiktatSecret(),
   ]);
 }
 
@@ -2876,6 +2916,88 @@ async function loadPushoverSettings() {
     if (s.pushover_token) document.getElementById('s-push-token').value = s.pushover_token;
     if (s.pushover_user)  document.getElementById('s-push-user').value  = s.pushover_user;
   } catch(_) {}
+}
+
+// ── DIKTAT-WEBHOOK-SECRET ─────────────────────────────────────────────────────
+let _diktatSecret = '';
+
+function diktatWebhookUrl() {
+  return location.origin + '/api/diktate';
+}
+
+function setDiktatSecretUI(secret) {
+  _diktatSecret = secret || '';
+  const input = document.getElementById('s-diktat-secret');
+  const toggle = document.getElementById('s-diktat-toggle');
+  const del = document.getElementById('s-diktat-del');
+  input.value = _diktatSecret;
+  input.type = 'password';
+  toggle.textContent = '👁';
+  del.disabled = !_diktatSecret;
+  del.style.opacity = _diktatSecret ? '1' : '.5';
+  document.getElementById('s-diktat-url').value = diktatWebhookUrl();
+}
+
+async function loadDiktatSecret() {
+  try {
+    const r = await req('GET', '/diktat-webhook-secret');
+    setDiktatSecretUI(r.value);
+  } catch(_) {
+    setDiktatSecretUI('');
+  }
+}
+
+function toggleDiktatSecret() {
+  const input = document.getElementById('s-diktat-secret');
+  const toggle = document.getElementById('s-diktat-toggle');
+  if (input.type === 'password') {
+    input.type = 'text';
+    toggle.textContent = '🙈';
+  } else {
+    input.type = 'password';
+    toggle.textContent = '👁';
+  }
+}
+
+async function copyDiktatSecret() {
+  if (!_diktatSecret) { toast('Noch kein Secret vorhanden', 'err'); return; }
+  try { await navigator.clipboard.writeText(_diktatSecret); toast('Secret kopiert ✓', 'ok'); }
+  catch(e) { toast('Kopieren fehlgeschlagen: ' + e.message, 'err'); }
+}
+
+async function copyDiktatUrl() {
+  try { await navigator.clipboard.writeText(diktatWebhookUrl()); toast('URL kopiert ✓', 'ok'); }
+  catch(e) { toast('Kopieren fehlgeschlagen: ' + e.message, 'err'); }
+}
+
+async function generateDiktatSecret() {
+  if (_diktatSecret && !confirm('Vorhandene Zaps müssen mit dem neuen Secret aktualisiert werden. Fortfahren?')) return;
+  const btn = document.getElementById('s-diktat-gen');
+  const orig = btn.textContent;
+  btn.textContent = 'Generiere…';
+  btn.disabled = true;
+  try {
+    const r = await req('POST', '/diktat-webhook-secret/generieren');
+    setDiktatSecretUI(r.value);
+    toast('Neues Secret erzeugt ✓', 'ok');
+  } catch(e) {
+    toast('Fehler: ' + e.message, 'err');
+  } finally {
+    btn.textContent = orig;
+    btn.disabled = false;
+  }
+}
+
+async function deleteDiktatSecret() {
+  if (!_diktatSecret) return;
+  if (!confirm('Webhook deaktivieren? Eingehende Diktate werden bis zur Neugenerierung abgewiesen.')) return;
+  try {
+    await req('DELETE', '/diktat-webhook-secret');
+    setDiktatSecretUI('');
+    toast('Webhook deaktiviert', 'ok');
+  } catch(e) {
+    toast('Fehler: ' + e.message, 'err');
+  }
 }
 
 async function changeAppPasswort() {
@@ -3656,35 +3778,46 @@ function renderBoox() {
   cnt.textContent = rows.length + ' Notizen';
 
   if (!rows.length) {
-    list.innerHTML = '<div class="empty"><div class="empty-icon">✎</div>Noch keine verarbeiteten PDF-Notizen</div>';
+    list.innerHTML = '<div class="empty"><div class="empty-icon">✎</div>Noch keine verarbeiteten Notizen</div>';
     return;
   }
 
   list.innerHTML = rows.map(r => {
     const ki = tryParseBoox(r.inhalt) || {};
-    const filename = (r.titel || '').replace(/^Boox:\s*/, '');
+    const isDiktat = (r.titel || '').startsWith('Diktat:');
+    const titelClean = (r.titel || '').replace(/^(Boox|Diktat):\s*/, '');
+    const icon = isDiktat ? '🎙' : '✎';
     const open = _booxOpen.has(r.id);
     const fehler = ki.fehler;
     const seiten = ki.seiten;
+    const dauer = ki.dauer_sekunden;
     const offenA = countOffen(ki.aufgaben);
     const offenD = countOffen(ki.delegationen);
     const offenT = countOffen(ki.termine);
     const offenSum = offenA + offenD + offenT;
 
+    const dauerStr = dauer ? `${Math.floor(dauer/60)}:${String(dauer%60).padStart(2,'0')} min` : '';
     const meta = [
-      seiten ? `${seiten} S.` : '',
+      isDiktat ? (dauerStr || 'Diktat') : (seiten ? `${seiten} S.` : ''),
       offenSum ? `${offenSum} offene Vorschläge` : 'alle bearbeitet',
     ].filter(Boolean).join(' · ');
+
+    const audioBlock = (isDiktat && r.datei_pfad)
+      ? `<h4>Aufnahme</h4><audio controls preload="none" src="/api/diktate/${r.id}/audio?key=${encodeURIComponent(SECRET)}" style="width:100%;max-width:480px"></audio>`
+      : '';
+
+    const quelldateiLabel = isDiktat ? 'Audio-Datei' : 'Quelldatei';
 
     const detail = open ? `
       <div class="boox-detail">
         ${ki.zusammenfassung ? `<h4>Zusammenfassung</h4><div>${esc(ki.zusammenfassung)}</div>` : ''}
+        ${audioBlock}
         ${ki.transkription ? `<h4>Transkription</h4><div class="transkr">${esc(ki.transkription)}</div>` : ''}
         ${(ki.aufgaben||[]).length ? `<h4>Aufgaben (${offenA} offen)</h4>${(ki.aufgaben||[]).map((a,i)=>renderAufgabe(r.id,i,normVorschlag(a))).join('')}` : ''}
         ${(ki.delegationen||[]).length ? `<h4>Delegationen (${offenD} offen)</h4>${(ki.delegationen||[]).map((d,i)=>renderDelegation(r.id,i,normVorschlag(d))).join('')}` : ''}
         ${(ki.termine||[]).length ? `<h4>Termine (${offenT} offen)</h4>${(ki.termine||[]).map((t,i)=>renderTermin(r.id,i,normVorschlag(t))).join('')}` : ''}
         ${fehler ? `<h4>Hinweis</h4><div>${esc(fehler)}</div>` : ''}
-        ${r.datei_pfad ? `<h4>Quelldatei</h4><div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink3);word-break:break-all">${esc(r.datei_pfad)}</div>` : ''}
+        ${r.datei_pfad ? `<h4>${quelldateiLabel}</h4><div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink3);word-break:break-all">${esc(r.datei_pfad)}</div>` : ''}
       </div>` : '';
 
     const vorgangChip = r.vorgang_id
@@ -3695,7 +3828,7 @@ function renderBoox() {
       <div class="boox-card">
         <div class="boox-head" onclick="toggleBoox(${r.id})">
           <div style="flex:1;min-width:0">
-            <div class="boox-titel">✎ ${esc(filename || 'Notiz')}</div>
+            <div class="boox-titel">${icon} ${esc(titelClean || 'Notiz')}</div>
             <div class="boox-meta">
               ${vorgangChip}
               ${meta ? `<span>${meta}</span>` : ''}

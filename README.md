@@ -96,11 +96,12 @@ scripts/
 - Antworten direkt aus der App (SMTP), KI-Entwurf auf Knopfdruck
 - E-Mail als erledigt markieren (Archivierung in IMAP-Ordner „Erledigt")
 
-**Boox-Integration**
-- PDFs werden automatisch stündlich aus Nextcloud geholt
-- Claude transkribiert Handschrift, extrahiert Termine/Aufgaben/Delegationen
-- Vorgang-Zuordnung mit Detailansicht im Dashboard
-- Verarbeitete Dateien werden in Unterordner verschoben
+**Notizen (PDF-Tablets + Plaud-Diktiergerät)**
+- PDFs (Boox / iPad / etc.) werden automatisch stündlich aus Nextcloud geholt
+- Plaud-Diktate kommen per Webhook (Zapier → POST /diktate, eigenes Secret in den Einstellungen generierbar)
+- Claude transkribiert Handschrift / bereinigt Audio-Transkripte und extrahiert Termine/Aufgaben/Delegationen
+- Vorgang-Zuordnung mit Detailansicht und Audio-Player für Diktate
+- Verarbeitete PDFs werden in den Unterordner `…_verarbeitet` verschoben; Diktat-MP3s landen unter `/Diktate/<Jahr>/`
 
 **Kalender**
 - CalDAV-Discovery: alle Kalender aus Nextcloud mit einem Klick einbinden
@@ -115,7 +116,7 @@ scripts/
 - Morgen-Briefing
 - Überfällige Delegationen
 - Termin-Erinnerungen 30 Min. vorher
-- Nach jeder verarbeiteten Boox-Notiz
+- Nach jedem verarbeiteten Diktat
 - Token und User Key in Einstellungen konfigurierbar (werden in der DB gespeichert)
 
 **Darstellung**
@@ -208,8 +209,15 @@ GET  /personen                   – Delegations-Personen
 POST /briefing                   – Morgen-Briefing erstellen
 POST /chat                       – KI-Chat (JSON oder Multipart+Bilder)
 
-POST /boox/sync                  – Boox-Notizen verarbeiten
+POST /boox/sync                  – PDF-Notizen verarbeiten
 GET  /boox/status                – Letzte verarbeitete Notizen
+GET  /boox/notizen               – Alle Notizen (PDFs + Diktate) mit Vorgang
+
+POST /diktate                    – Webhook für Plaud-Diktate (X-Webhook-Secret)
+GET  /diktate/:id/audio          – MP3 einer Diktat-Notiz streamen
+GET  /diktat-webhook-secret      – Aktuelles Webhook-Secret abrufen
+POST /diktat-webhook-secret/generieren – Neues Secret erzeugen
+DELETE /diktat-webhook-secret    – Webhook deaktivieren
 
 POST /accounts/calendar/discover – CalDAV-Kalender entdecken
 POST /system/upload              – Datei-Update im Browser

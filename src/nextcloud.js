@@ -220,6 +220,32 @@ export async function booxVerarbeitet(pfad, zielOrdner) {
   }
 }
 
+// ── DIKTAT-AUDIO ─────────────────────────────────────────────────────────────
+// MP3s landen im Format /Diktate/<YYYY>/<YYYY-MM-DD>_<safe-titel>.mp3
+export const DIKTAT_BASIS_PFAD = '/Diktate';
+
+function safeFilenameStamm(titel) {
+  return (titel || 'diktat')
+    .replace(/[\/\\:*?"<>|]/g, '_')
+    .replace(/\s+/g, '_')
+    .slice(0, 80) || 'diktat';
+}
+
+export async function speichereDiktatAudio(buffer, titel, aufgenommenAm, basisPfad = DIKTAT_BASIS_PFAD) {
+  const datum = aufgenommenAm ? new Date(aufgenommenAm) : new Date();
+  const jahr = String(datum.getFullYear());
+  const datumStr = datum.toISOString().slice(0, 10);
+  const stamm = safeFilenameStamm(titel);
+  const dateiname = `${datumStr}_${stamm}.mp3`;
+  const jahrPfad = `${basisPfad}/${jahr}`;
+  const zielPfad = `${jahrPfad}/${dateiname}`;
+
+  await ncMkdir(basisPfad).catch(e => console.warn('[Diktat] mkdir basis:', e.message));
+  await ncMkdir(jahrPfad).catch(e => console.warn('[Diktat] mkdir jahr:', e.message));
+  await ncUpload(zielPfad, buffer, 'audio/mpeg');
+  return zielPfad;
+}
+
 // Existenz-Prüfung eines Ordners auf Nextcloud (HEAD/PROPFIND).
 export async function ncOrdnerExistiert(pfad) {
   try {

@@ -437,6 +437,82 @@ Antworte mit JSON:
   }
 }
 
+// ── Diktat-Analyse (Plaud / Webhook-Transkript) ───────────────────────────────
+
+export async function diktatAnalysieren(transkript, aufgenommenAm = null) {
+  const text = (transkript || '').trim();
+  if (!text) {
+    return {
+      transkription: '',
+      vorgang_id: null,
+      vorgang_titel: null,
+      aufgaben: [],
+      delegationen: [],
+      termine: [],
+      zusammenfassung: '',
+      fehler: 'Leeres Transkript',
+    };
+  }
+
+  const vorgaenge = await query(
+    'SELECT id, titel FROM vorgaenge WHERE status != ? ORDER BY updated_at DESC LIMIT 20',
+    ['abgeschlossen']
+  );
+
+  const kontext = aufgenommenAm
+    ? `Aufgenommen am ${new Date(aufgenommenAm).toLocaleString('de-DE')}.`
+    : '';
+
+  const prompt = `Du analysierst ein Diktat des Schulleiters (per Plaud-Diktiergerät aufgenommen, automatisch transkribiert). ${kontext}
+
+Bestehende Vorgänge:
+${vorgaenge.map(v => `- #${v.id}: ${v.titel}`).join('\n') || 'Keine'}
+
+Transkript:
+"""
+${text.slice(0, 12000)}
+"""
+
+Bitte:
+1. Bereinige das Transkript leicht (Füllwörter, Versprecher), aber bewahre Inhalt und Tonfall. Nichts hinzudichten.
+2. Erkenne, zu welchem Vorgang das Diktat gehört (oder ob ein neuer Vorgang anzulegen ist).
+3. Extrahiere klar: Aufgaben (für mich), Delegationen (an andere), Termine.
+
+Antworte NUR mit JSON:
+{
+  "transkription": "...",
+  "vorgang_id": null,
+  "vorgang_titel": "...",
+  "aufgaben": [{"titel":"...","wichtig":1,"dringend":0,"faellig_am":null}],
+  "delegationen": [{"an":"[PERSON_1]","aufgabe":"...","deadline":"2026-05-15"}],
+  "termine": [{"titel":"...","datum":"2026-05-07","uhrzeit":"14:00"}],
+  "zusammenfassung": "..."
+}`;
+
+  const response = await client.messages.create({
+    model: MODEL_FAST,
+    max_tokens: 2500,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  try {
+    const raw = response.content[0].text.trim().replace(/```json|```/g, '');
+    const parsed = JSON.parse(raw);
+    return parsed;
+  } catch (e) {
+    return {
+      transkription: text,
+      vorgang_id: null,
+      vorgang_titel: null,
+      aufgaben: [],
+      delegationen: [],
+      termine: [],
+      zusammenfassung: '',
+      fehler: 'JSON-Parse fehlgeschlagen',
+    };
+  }
+}
+
 // ── Morgen-Briefing ───────────────────────────────────────────────────────────
 
 export async function morgenbriefing() {
