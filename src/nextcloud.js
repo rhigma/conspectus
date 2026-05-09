@@ -64,14 +64,21 @@ export async function ncList(path) {
     .filter(p => !p.endsWith(path) && !p.endsWith(path + '/'));
 }
 
+// ── Ordner-Basis-Konstanten ───────────────────────────────────────────────
+// Eigener Top-Level-Ordner /Conspectus/, damit es keine Kollision mit z.B.
+// Nextcloud Mail (das selbst /E-Mail-Anhänge/ verwenden kann) gibt.
+export const NC_BASIS = '/Conspectus';
+export const NC_VORGAENGE_BASIS = `${NC_BASIS}/Vorgaenge`;
+export const NC_EMAIL_ANHAENGE_BASIS = `${NC_BASIS}/E-Mail-Anhänge`;
+
 // ── Ordner für Vorgang anlegen ─────────────────────────────────────────────
 
 export async function vorgangOrdner(titel) {
   const safe = titel.replace(/[\/\\:*?"<>|]/g, '_').slice(0, 80);
-  const base = '/Vorgaenge';
-  const path = `${base}/${safe}`;
+  const path = `${NC_VORGAENGE_BASIS}/${safe}`;
   try {
-    await ncMkdir(base);
+    await ncMkdir(NC_BASIS);
+    await ncMkdir(NC_VORGAENGE_BASIS);
     await ncMkdir(path);
   } catch (e) {
     console.warn('[NC] Ordner anlegen:', e.message);
@@ -91,6 +98,71 @@ export async function speichereAnhang(vorgangOrdnerPfad, dateiname, buffer, mime
     console.warn('[NC] Anhang speichern:', e.message);
   }
   return path;
+}
+
+// E-Mail-Anhänge nach /Conspectus/E-Mail-Anhänge/<JJJJ>/<MM>/<account-uid>_<datei>
+// ablegen. Datum-Buckets halten den Ordner schlank; das account-uid-Präfix
+// verhindert Kollisionen bei gleichnamigen Anhängen aus verschiedenen Mails.
+export async function speichereEmailAnhang(emailDate, accountId, uid, dateiname, buffer, mimeType) {
+  const d = emailDate ? new Date(emailDate) : new Date();
+  const jahr = String(d.getFullYear());
+  const monat = String(d.getMonth() + 1).padStart(2, '0');
+  const safe = (dateiname || 'anhang').replace(/[\/\\:*?"<>|]/g, '_');
+  const ordner = `${NC_EMAIL_ANHAENGE_BASIS}/${jahr}/${monat}`;
+  const path = `${ordner}/${accountId}-${uid}_${safe}`;
+  try {
+    await ncMkdir(NC_BASIS);
+    await ncMkdir(NC_EMAIL_ANHAENGE_BASIS);
+    await ncMkdir(`${NC_EMAIL_ANHAENGE_BASIS}/${jahr}`);
+    await ncMkdir(ordner);
+    await ncUpload(path, buffer, mimeType);
+  } catch (e) {
+    console.warn('[NC] E-Mail-Anhang speichern:', e.message);
+  }
+  return path;
+}
+
+// WebDAV MOVE — ignoriert 404 (Quelle existiert nicht mehr). Gibt true bei Erfolg.
+export async function ncMove(srcPath, destPath, { overwrite = false } = {}) {
+  const enc = p => p.split('/').map(s => encodeURIComponent(s)).join('/');
+  const url  = `${NC_URL()}/remote.php/dav/files/${NC_USER()}${enc(srcPath)}`;
+  const dest = `${NC_URL()}/remote.php/dav/files/${NC_USER()}${enc(destPath)}`;
+  const res = await fetch(url, {
+    method: 'MOVE',
+    headers: { Authorization: authHeader(), Destination: dest, Overwrite: overwrite ? 'T' : 'F' },
+  });
+  if (res.status === 404) return false;
+  if (!res.ok) throw new Error(`MOVE ${srcPath} → ${destPath}: HTTP ${res.status}`);
+  return true;
+}
+
+// Verschiebt alle Anhänge einer E-Mail in den Anhänge-Unterordner ihres Vorgangs.
+// Best-effort: schlägt eine Datei fehl, bleibt sie am alten Ort und ihr Pfad in
+// der DB unverändert. Liefert die aktualisierte Anhang-Liste oder null, wenn
+// nichts zu tun war.
+export async function moveEmailAnhaengeZuVorgang(anhangListe, vorgangNcOrdner) {
+  if (!Array.isArray(anhangListe) || !anhangListe.length || !vorgangNcOrdner) return null;
+  const ziel = `${vorgangNcOrdner}/Anhänge`;
+  let dirty = false;
+  try { await ncMkdir(vorgangNcOrdner); } catch (_) {}
+  try { await ncMkdir(ziel); } catch (_) {}
+  for (let i = 0; i < anhangListe.length; i++) {
+    const a = anhangListe[i];
+    if (!a?.pfad) continue;
+    if (a.pfad.startsWith(ziel + '/')) continue;          // schon am Ziel
+    const dateiname = a.pfad.split('/').pop();
+    const neuerPfad = `${ziel}/${dateiname}`;
+    try {
+      const ok = await ncMove(a.pfad, neuerPfad);
+      if (ok) {
+        anhangListe[i] = { ...a, pfad: neuerPfad };
+        dirty = true;
+      }
+    } catch (e) {
+      console.warn(`[NC-Move] ${a.pfad} → ${neuerPfad}: ${e.message}`);
+    }
+  }
+  return dirty ? anhangListe : null;
 }
 
 // ── Nextcloud Tasks (VTODO via CalDAV) ────────────────────────────────────

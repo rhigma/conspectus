@@ -1,7 +1,7 @@
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { query, queryOne } from './db.js';
-import { speichereAnhang } from './nextcloud.js';
+import { speichereEmailAnhang, moveEmailAnhaengeZuVorgang, vorgangOrdner } from './nextcloud.js';
 import { diktatVerarbeiten, getPlaudAbsenderPattern, cleanPlaudBody } from './diktate.js';
 import { getForwardingPatterns, isTrustedForwarder, parseForwardedEmail } from './forwarding.js';
 
@@ -151,9 +151,11 @@ async function syncAccount(account) {
               if (att.size > 20 * 1024 * 1024) continue;
               let pfad = null;
               try {
-                pfad = await speichereAnhang(
-                  '/E-Mail-Anhänge',
-                  `${msg.uid}_${att.filename || 'anhang'}`,
+                pfad = await speichereEmailAnhang(
+                  msg.envelope?.date,
+                  account.id,
+                  msg.uid,
+                  att.filename || 'anhang',
                   att.content,
                   att.contentType
                 );
@@ -358,6 +360,8 @@ async function syncVorgangFolders(account) {
               'UPDATE emails SET uid = ?, imap_mailbox = ?, vorgang_id = ? WHERE id = ?',
               [String(uid), folderPath, vorgang.id, existing.id]
             );
+            // Nextcloud-Anhänge mit umziehen, wenn die Mail neu zum Vorgang gehört.
+            await verschiebeAnhaengeZuVorgang(existing.id, vorgang.id);
           } else {
             const parsed = await simpleParser(msgInfo.source).catch(() => ({}));
             let bodyText = (parsed.text || '').slice(0, 5000);
@@ -390,6 +394,33 @@ async function syncVorgangFolders(account) {
     }
   } finally {
     try { await client.logout(); } catch (e) {}
+  }
+}
+
+// Verschiebt alle Nextcloud-Anhänge einer E-Mail in den Vorgang-Ordner und
+// schreibt die neuen Pfade in anhang_pfade. Best-effort: Fehler bei einzelnen
+// Dateien werden geloggt, blockieren aber nicht die Vorgang-Zuordnung.
+export async function verschiebeAnhaengeZuVorgang(emailId, vorgangId) {
+  try {
+    const email = await queryOne('SELECT id, anhang_pfade FROM emails WHERE id = ?', [emailId]);
+    if (!email?.anhang_pfade) return;
+    let liste; try { liste = JSON.parse(email.anhang_pfade); } catch { return; }
+    if (!Array.isArray(liste) || !liste.length) return;
+
+    const vorgang = await queryOne('SELECT id, titel, nc_ordner FROM vorgaenge WHERE id = ?', [vorgangId]);
+    if (!vorgang) return;
+    let ncOrdner = vorgang.nc_ordner;
+    if (!ncOrdner) {
+      ncOrdner = await vorgangOrdner(vorgang.titel);
+      await query('UPDATE vorgaenge SET nc_ordner = ? WHERE id = ?', [ncOrdner, vorgang.id]);
+    }
+    const updated = await moveEmailAnhaengeZuVorgang(liste, ncOrdner);
+    if (updated) {
+      await query('UPDATE emails SET anhang_pfade = ? WHERE id = ?', [JSON.stringify(updated), emailId]);
+      console.log(`[NC-Move] E-Mail #${emailId} → Vorgang "${vorgang.titel}" (${updated.filter(a => a?.pfad?.startsWith(ncOrdner + '/')).length} Anhänge)`);
+    }
+  } catch (e) {
+    console.warn(`[NC-Move] E-Mail #${emailId} → Vorgang #${vorgangId}: ${e.message}`);
   }
 }
 

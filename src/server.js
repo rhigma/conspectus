@@ -8,7 +8,7 @@ import { fileURLToPath } from 'url';
 import { initSchema, query, queryOne } from './db.js';
 import { syncAllAccounts, moveToErledigt, syncErledigtStatus, vorgangFolderPath, renameVorgangFolderOnAllAccounts } from './imap.js';
 import { chat, executeAction, getTokenStats, emailEinordnen, notizAnalysieren, morgenbriefing, naturalSearchQuery } from './ai.js';
-import { ncMkdir, ncUpload, neueBooxNotizen, booxVerarbeitet, ncDownload, vorgangOrdner, defaultZielOrdner, ncOrdnerExistiert, BOOX_PFAD, BOOX_VERARBEITET } from './nextcloud.js';
+import { ncMkdir, ncUpload, neueBooxNotizen, booxVerarbeitet, ncDownload, vorgangOrdner, defaultZielOrdner, ncOrdnerExistiert, moveEmailAnhaengeZuVorgang, NC_BASIS, NC_VORGAENGE_BASIS, NC_EMAIL_ANHAENGE_BASIS, BOOX_PFAD, BOOX_VERARBEITET } from './nextcloud.js';
 import { createCalDavEvent, deleteCalDavEvent } from './caldav.js';
 import { diktatVerarbeiten } from './diktate.js';
 import { randomUUID, randomBytes, timingSafeEqual } from 'crypto';
@@ -1162,8 +1162,9 @@ async function start() {
       console.log('[Auth] App-Passwort aus settings-Tabelle geladen');
     }
   } catch(e) { console.error('[Auth] Konnte api_secret nicht laden:', e.message); }
-  await ncMkdir('/Vorgaenge').catch(() => {});
-  await ncMkdir('/E-Mail-Anhänge').catch(() => {});
+  await ncMkdir(NC_BASIS).catch(() => {});
+  await ncMkdir(NC_VORGAENGE_BASIS).catch(() => {});
+  await ncMkdir(NC_EMAIL_ANHAENGE_BASIS).catch(() => {});
   await ncMkdir('/reMarkable').catch(() => {});
   await ncMkdir('/reMarkable/neu').catch(() => {});
   await ncMkdir('/reMarkable/verarbeitet').catch(() => {});

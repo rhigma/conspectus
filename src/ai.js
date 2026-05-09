@@ -1,7 +1,7 @@
 ﻿import Anthropic from '@anthropic-ai/sdk';
 import { randomUUID, createHash } from 'crypto';
 import { query, queryOne } from './db.js';
-import { getEmailContext, moveToErledigt, moveToVorgangFolder, vorgangFolderPath } from './imap.js';
+import { getEmailContext, moveToErledigt, moveToVorgangFolder, vorgangFolderPath, verschiebeAnhaengeZuVorgang } from './imap.js';
 import { vorgangOrdner, taskAnlegen } from './nextcloud.js';
 import { createCalDavEvent, deleteCalDavEvent } from './caldav.js';
 import { sendReply } from './smtp.js';
@@ -676,6 +676,8 @@ export async function executeAction(action) {
           'INSERT INTO vorgang_eintraege (vorgang_id, typ, titel, inhalt, ref_id) VALUES (?,?,?,?,?)',
           [action.vorgang_id, 'email', email.subject, email.body_text, action.email_id]
         );
+        // Nextcloud-Anhänge in den Vorgang-Ordner umziehen (best-effort)
+        await verschiebeAnhaengeZuVorgang(action.email_id, action.vorgang_id);
       }
       return { done: 'email_zugeordnet', email_id: action.email_id, vorgang_id: action.vorgang_id };
     }
