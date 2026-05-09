@@ -987,6 +987,7 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
             <button class="email-action-btn primary" onclick="zuordnen()">→ Zuordnen</button>
             <button class="email-action-btn" onclick="neuerVorgangAusEmail()">+ Neuer Vorgang</button>
             <button class="email-action-btn" id="ev-todo-btn" style="display:none;margin-top:4px" onclick="openNewTodoFromEmail()">☑ Todo anlegen</button>
+            <button class="email-action-btn" id="ev-bewerbung-btn" style="display:none;margin-top:4px" onclick="openNewBewerbungFromEmail()">◍ Als Bewerbung erfassen</button>
           </div>
 
           <!-- KI-Analyse -->
@@ -1799,6 +1800,7 @@ async function loadEmails() {
 // ── E-MAIL VIEW ────────────────────────────────────────────────────────────────
 let activeEmailId = null;
 let activeEmailVorgangId = null;
+let activeEmailData = null; // letzte geladene Email für Bewerbungs-Pre-Fill
 let _todoFromEmail = false;
 let _emailFromView = 'dash';
 
@@ -1821,7 +1823,9 @@ async function openEmail(id, fromView) {
   try {
     const email = await req('GET', `/emails/${id}`);
     activeEmailVorgangId = email.vorgang_id;
+    activeEmailData = email;
     document.getElementById('ev-todo-btn').style.display = email.vorgang_id ? '' : 'none';
+    await updateBewerbungBtnVisibility();
 
     document.getElementById('ev-subject').textContent = email.subject || '(kein Betreff)';
     document.getElementById('ev-from').textContent = email.from_name ? `${email.from_name} <${email.from_email}>` : email.from_email;
@@ -1845,7 +1849,9 @@ async function openEmail(id, fromView) {
     const vorgaenge = await req('GET', '/vorgaenge?status=offen');
     const sel = document.getElementById('ev-vorgang-select');
     sel.innerHTML = '<option value="">Vorgang wählen…</option>' +
-      vorgaenge.map(v => `<option value="${v.id}" ${v.id === email.vorgang_id ? 'selected' : ''}>${esc(v.titel)}</option>`).join('');
+      vorgaenge.map(v => `<option value="${v.id}" data-typ="${esc(v.typ)}" ${v.id === email.vorgang_id ? 'selected' : ''}>${esc(v.titel)}</option>`).join('');
+    // Sichtbarkeit nochmal prüfen, falls der zugeordnete Vorgang erst durch das Dropdown bekannt wird
+    await updateBewerbungBtnVisibility();
 
     // KI-Analyse
     kiAnalyseEmail(email);
@@ -1892,6 +1898,7 @@ async function zuordnen() {
     await req('POST', `/emails/${activeEmailId}/zuordnen`, { vorgang_id: vorgangId });
     activeEmailVorgangId = vorgangId;
     document.getElementById('ev-todo-btn').style.display = '';
+    await updateBewerbungBtnVisibility();
     toast('E-Mail zugeordnet ✓', 'ok');
     loadStats();
   } catch(e) { toast('Fehler: ' + e.message, 'err'); }
@@ -1907,6 +1914,7 @@ async function neuerVorgangAusEmail() {
     await req('POST', `/emails/${activeEmailId}/zuordnen`, { vorgang_id: nv.id });
     activeEmailVorgangId = nv.id;
     document.getElementById('ev-todo-btn').style.display = '';
+    await updateBewerbungBtnVisibility();
     toast(`Vorgang "${titel}" angelegt und E-Mail zugeordnet ✓`, 'ok');
     // Dropdown aktualisieren
     const opt = document.createElement('option');
@@ -3053,6 +3061,59 @@ function openNewBewerbung(vorgangId) {
   document.getElementById('mb-termin').value = '';
   document.getElementById('mb-quali').value = '';
   document.getElementById('mb-notiz').value = '';
+  document.getElementById('m-bewerbung').style.display = 'flex';
+  setTimeout(() => document.getElementById('mb-name').focus(), 50);
+}
+
+async function updateBewerbungBtnVisibility() {
+  const btn = document.getElementById('ev-bewerbung-btn');
+  if (!btn) return;
+  if (!activeEmailVorgangId) { btn.style.display = 'none'; return; }
+  try {
+    if (!_vorgangTypen.length) await loadVorgangTypen();
+    // Vorgang-Typ aus dem Dropdown ableiten oder direkt nachladen
+    const sel = document.getElementById('ev-vorgang-select');
+    const opt = sel?.querySelector(`option[value="${activeEmailVorgangId}"]`);
+    let typ = opt?.dataset?.typ;
+    if (!typ) {
+      const v = await req('GET', `/vorgaenge/${activeEmailVorgangId}`);
+      typ = v.typ;
+      if (opt) opt.dataset.typ = typ;
+    }
+    btn.style.display = (typ === 'bewerbungsverfahren') ? '' : 'none';
+  } catch(_) { btn.style.display = 'none'; }
+}
+
+function _extractTelefon(text) {
+  if (!text) return null;
+  // Sehr grobe Heuristik für deutsche Nummern
+  const m = text.match(/(?:tel(?:efon)?\.?\s*:?\s*)?(\+49[\s\/\-]?\d[\d\s\/\-]{7,}|0\d[\d\s\/\-]{7,})/i);
+  return m ? m[1].trim() : null;
+}
+
+function openNewBewerbungFromEmail() {
+  if (!activeEmailVorgangId) { toast('E-Mail noch keinem Vorgang zugeordnet', 'err'); return; }
+  if (!activeEmailData) { toast('E-Mail-Daten nicht geladen', 'err'); return; }
+  const e = activeEmailData;
+  const eingang = e.date ? new Date(e.date).toISOString().slice(0,10) : new Date().toISOString().slice(0,10);
+  const bodyExcerpt = (e.body_text || '').trim().slice(0, 600);
+  const notiz = [
+    `Aus E-Mail vom ${fmtDate(e.date)}: „${e.subject || '(kein Betreff)'}"`,
+    bodyExcerpt ? '' : null,
+    bodyExcerpt || null,
+  ].filter(Boolean).join('\n');
+
+  document.getElementById('mb-title').textContent = 'Bewerbung aus E-Mail';
+  document.getElementById('mb-id').value = '';
+  document.getElementById('mb-id').dataset.vorgangId = activeEmailVorgangId;
+  document.getElementById('mb-name').value = e.from_name || '';
+  document.getElementById('mb-email').value = e.from_email || '';
+  document.getElementById('mb-telefon').value = _extractTelefon(e.body_text) || '';
+  document.getElementById('mb-eingang').value = eingang;
+  document.getElementById('mb-status').value = 'eingegangen';
+  document.getElementById('mb-termin').value = '';
+  document.getElementById('mb-quali').value = '';
+  document.getElementById('mb-notiz').value = notiz;
   document.getElementById('m-bewerbung').style.display = 'flex';
   setTimeout(() => document.getElementById('mb-name').focus(), 50);
 }
