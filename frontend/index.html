@@ -279,6 +279,11 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
 [data-theme="dark"] .boox-chip.vorschlag{background:#4a3d10;color:#f0d57a}
 .boox-vorschlag-banner{margin:8px 0 14px;padding:10px 12px;border-radius:var(--r);background:#fff3cd;border:1px solid #e6c66a;display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:12px;color:#5a4400}
 .boox-vorschlag-banner .titel{font-family:'IBM Plex Mono',monospace;font-size:11px;background:rgba(255,255,255,.6);padding:2px 6px;border-radius:3px}
+.boox-vorschlag-banner .vorschlag-titel-input{flex:1;min-width:200px;font-family:'IBM Plex Mono',monospace;font-size:11px;background:rgba(255,255,255,.6);padding:3px 7px;border-radius:3px;border:1px solid transparent;color:inherit;outline:none}
+.boox-vorschlag-banner .vorschlag-titel-input:hover{border-color:#e6c66a}
+.boox-vorschlag-banner .vorschlag-titel-input:focus{border-color:#5a4400;background:#fff}
+[data-theme="dark"] .boox-vorschlag-banner .vorschlag-titel-input{background:rgba(0,0,0,.25)}
+[data-theme="dark"] .boox-vorschlag-banner .vorschlag-titel-input:focus{background:rgba(0,0,0,.5);border-color:#f0d57a}
 [data-theme="dark"] .boox-vorschlag-banner{background:#4a3d10;border-color:#7a6428;color:#f0d57a}
 [data-theme="dark"] .boox-vorschlag-banner .titel{background:rgba(0,0,0,.25)}
 .vorschlag-kandidaten{flex-basis:100%;border-top:1px solid rgba(122,90,0,.18);margin-top:4px;padding-top:8px;color:var(--ink2)}
@@ -4492,6 +4497,7 @@ function toggleEmailsZuord() {
 
 // ── BOOX-NOTIZEN ──────────────────────────────────────────────────────────────
 let _booxDaten = [];
+let _booxVorgaengeTitel = []; // alle offenen Vorgangs-Titel — für Vorschlag-Autocomplete
 const _booxOpen = new Set();
 const _vorschlagKandidaten = new Map(); // eintragId → { emails, events, begruendung }
 const _vorschlagLoading = new Set();
@@ -4505,7 +4511,14 @@ async function loadBoox() {
   const list = document.getElementById('boox-list');
   list.innerHTML = '<div class="loading-row"><div class="spin"></div>Lade…</div>';
   try {
-    _booxDaten = await req('GET', '/boox/notizen?limit=100');
+    const [notizen, vorgaenge] = await Promise.all([
+      req('GET', '/boox/notizen?limit=100'),
+      req('GET', '/vorgaenge?status=offen').catch(() => []),
+    ]);
+    _booxDaten = notizen;
+    _booxVorgaengeTitel = (vorgaenge || [])
+      .map(v => v.titel)
+      .filter(t => t && t !== 'Notizen ohne Zuordnung' && t !== 'Diktate ohne Zuordnung');
     renderBoox();
   } catch(e) {
     list.innerHTML = '<div class="empty">Fehler: ' + esc(e.message) + '</div>';
@@ -4545,7 +4558,11 @@ function renderBoox() {
     return;
   }
 
-  list.innerHTML = rows.map(r => {
+  const datalistHtml = `<datalist id="vorschlag-vorgaenge-list">${
+    _booxVorgaengeTitel.map(t => `<option value="${esc(t)}"></option>`).join('')
+  }</datalist>`;
+
+  list.innerHTML = datalistHtml + rows.map(r => {
     const ki = tryParseBoox(r.inhalt) || {};
     const isDiktat = (r.titel || '').startsWith('Diktat:');
     const isRocketbook = (r.titel || '').startsWith('Rocketbook:');
@@ -4579,8 +4596,7 @@ function renderBoox() {
     const vorschlagBanner = vorschlag ? `
       <div class="boox-vorschlag-banner">
         <span>💡 Vorschlag:</span>
-        <span class="titel">${esc(vorschlag)}</span>
-        <span style="flex:1"></span>
+        <input class="vorschlag-titel-input" id="vorschlag-titel-${r.id}" value="${esc(vorschlag)}" list="vorschlag-vorgaenge-list" placeholder="Vorgangs-Titel…" autocomplete="off" />
         <button class="boox-btn primary" onclick="vorgangAusVorschlag(${r.id})">Übernehmen</button>
         <button class="boox-btn" onclick="vorschlagVerwerfen(${r.id})">Verwerfen</button>
         <div class="vorschlag-kandidaten" id="kand-${r.id}">${kandInner}</div>
@@ -4796,12 +4812,15 @@ function renderVorschlagKandidaten(eintragId, data) {
 }
 
 async function vorgangAusVorschlag(eintragId) {
+  const inputEl = document.getElementById(`vorschlag-titel-${eintragId}`);
+  const titel = inputEl ? inputEl.value.trim() : '';
+  if (!titel) { toast('Bitte einen Vorgangs-Titel angeben', 'err'); return; }
   const emailIds = [...document.querySelectorAll(`#kand-${eintragId} input[data-kand-typ="email"]:checked`)]
     .map(el => parseInt(el.dataset.kandId)).filter(Number.isFinite);
   const eventIds = [...document.querySelectorAll(`#kand-${eintragId} input[data-kand-typ="event"]:checked`)]
     .map(el => parseInt(el.dataset.kandId)).filter(Number.isFinite);
   try {
-    const r = await req('POST', `/boox/${eintragId}/vorgang-aus-vorschlag`, { email_ids: emailIds, event_ids: eventIds });
+    const r = await req('POST', `/boox/${eintragId}/vorgang-aus-vorschlag`, { titel, email_ids: emailIds, event_ids: eventIds });
     const extras = [];
     if (r.emails_zugeordnet) extras.push(`${r.emails_zugeordnet} E-Mail${r.emails_zugeordnet > 1 ? 's' : ''}`);
     if (r.events_zugeordnet) extras.push(`${r.events_zugeordnet} Termin${r.events_zugeordnet > 1 ? 'e' : ''}`);
