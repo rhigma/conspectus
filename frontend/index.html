@@ -342,6 +342,8 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
 .chron-icon.ki_analyse{background:var(--ink);color:var(--paper)}
 .chron-content{flex:1;min-width:0}
 .chron-title{font-size:12px;font-weight:500;color:var(--ink);margin-bottom:3px}
+.chron-title-link{cursor:pointer}
+.chron-title-link:hover{color:var(--accent);text-decoration:underline}
 .chron-text{font-size:12px;color:var(--ink2);line-height:1.6;max-height:80px;overflow:hidden;position:relative}
 .chron-text.expanded{max-height:none}
 .chron-time{font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace;margin-top:4px}
@@ -2854,11 +2856,14 @@ function renderDetail(v, todos = []) {
 
   const chronHtml = all.length ? all.map((e,i) => {
     const anhaengeBlock = e.typ === 'email' ? renderEmailAnhaengeInline(e.ref) : '';
+    const titel = (e.typ === 'email' && e.ref?.id)
+      ? `<div class="chron-title chron-title-link" onclick="openEmail(${e.ref.id},'detail')" title="E-Mail öffnen">${esc(e.titel)}</div>`
+      : `<div class="chron-title">${esc(e.titel)}</div>`;
     return `
     <div class="chron-item">
       <div class="chron-icon ${e.typ}">${icons[e.typ]||'·'}</div>
       <div class="chron-content">
-        <div class="chron-title">${esc(e.titel)}</div>
+        ${titel}
         <div class="chron-text" id="ct-${i}">${esc(e.inhalt||'').replace(/\n/g,'<br>')}</div>
         ${(e.inhalt||'').length > 200 ? `<button class="expand-btn" onclick="toggleExpand('ct-${i}',this)">Mehr anzeigen ↓</button>` : ''}
         ${anhaengeBlock}
