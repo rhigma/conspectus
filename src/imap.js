@@ -3,6 +3,7 @@ import { simpleParser } from 'mailparser';
 import { query, queryOne } from './db.js';
 import { speichereAnhang } from './nextcloud.js';
 import { diktatVerarbeiten, getPlaudAbsenderPattern, cleanPlaudBody } from './diktate.js';
+import { getForwardingPatterns, isTrustedForwarder, parseForwardedEmail } from './forwarding.js';
 
 const MAX_EMAILS = 200;
 const VORGAENGE_ROOT = 'Vorgänge';
@@ -91,6 +92,7 @@ async function syncAccount(account) {
 
   // Plaud-Absender-Pattern einmal pro Sync laden — billiger als pro E-Mail.
   const plaudPattern = (await getPlaudAbsenderPattern()).toLowerCase();
+  const forwardingPatterns = await getForwardingPatterns();
 
   try {
     const lock = await client.getMailboxLock('INBOX');
@@ -187,6 +189,31 @@ async function syncAccount(account) {
           }
         }
 
+        // Default: Werte aus dem Envelope. Wird unten ggf. durch das Original
+        // einer Weiterleitung ersetzt.
+        let finalFromName  = env.from?.[0]?.name || null;
+        let finalFromEmail = env.from?.[0]?.address || null;
+        let finalSubject   = env.subject || '(kein Betreff)';
+        let finalBody      = bodyText;
+        let finalDate      = env.date || null;
+
+        // Vertrauenswürdige Weiterleitung: Wrapper entfernen und auf Original
+        // zurückführen. Bei nicht parsebarem Body fail-safe als Original-Mail
+        // behandeln (statt zu raten).
+        if (isTrustedForwarder(fromEmail, forwardingPatterns)) {
+          const fwd = parseForwardedEmail(bodyText);
+          if (fwd) {
+            finalFromName  = fwd.fromName  || finalFromName;
+            finalFromEmail = fwd.fromEmail || finalFromEmail;
+            finalSubject   = fwd.subject   || finalSubject;
+            finalBody      = fwd.body      || finalBody;
+            if (fwd.date) finalDate = fwd.date;
+            console.log(`[Forwarding] "${env.subject}" → entpackt: ${finalFromEmail} / "${finalSubject}"`);
+          } else {
+            console.warn(`[Forwarding] "${env.subject}" — Header nicht erkannt, behandle als reguläre Mail`);
+          }
+        }
+
         await query(
           `INSERT IGNORE INTO emails
             (account_id, uid, message_id, from_name, from_email, subject, body_text, date, unread, anhang_pfade, imap_mailbox)
@@ -194,11 +221,11 @@ async function syncAccount(account) {
           [
             account.id, String(msg.uid),
             env.messageId || null,
-            env.from?.[0]?.name || null,
-            env.from?.[0]?.address || null,
-            env.subject || '(kein Betreff)',
-            bodyText,
-            env.date || null,
+            finalFromName,
+            finalFromEmail,
+            finalSubject,
+            finalBody,
+            finalDate,
             msg.flags.has('\\Seen') ? 0 : 1,
             JSON.stringify(anhangPfade),
             'INBOX',

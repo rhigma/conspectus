@@ -1056,6 +1056,27 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
           </div>
         </div>
 
+        <!-- WEITERLEITUNGEN -->
+        <div class="card">
+          <div class="card-header"><span class="card-title">↩ E-Mail-Weiterleitungen</span></div>
+          <div style="font-size:11px;color:var(--ink2);line-height:1.65;margin-bottom:10px">
+            E-Mails von diesen Adressen werden als Weiterleitung erkannt: Wrapper und Signatur
+            werden entfernt, und der ursprüngliche Absender, Betreff und Datum werden aus dem
+            Body übernommen — danach läuft die normale KI-Einordnung.
+          </div>
+          <div>
+            <div style="font-size:10px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.1em;color:var(--ink3);margin-bottom:4px">Vertrauenswürdige Absender (eine Adresse pro Zeile)</div>
+            <textarea id="s-fwd-senders" rows="3" placeholder="meine.privat@example.com&#10;privat-zweit@example.com" style="width:100%;padding:7px 8px;border:1px solid var(--border);border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:11px;background:var(--paper);color:var(--ink);resize:vertical;box-sizing:border-box"></textarea>
+            <div style="display:flex;justify-content:flex-end;margin-top:6px">
+              <button onclick="saveForwardingSenders()" style="padding:7px 12px;background:var(--accent);color:#fff;border:none;border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:10px;cursor:pointer">Speichern</button>
+            </div>
+            <div style="margin-top:6px;font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--ink3);line-height:1.5">
+              Substring-Match, case-insensitiv. Bei nicht parsebarer Weiterleitung wird die
+              Mail unverändert als reguläre E-Mail gespeichert (fail-safe).
+            </div>
+          </div>
+        </div>
+
         <!-- BRIEFING-ZEIT -->
         <div class="card">
           <div class="card-header"><span class="card-title">☀ Morgen-Briefing</span></div>
@@ -2855,6 +2876,7 @@ async function loadEinstellungen() {
     loadPdfNotizOrdner(),
     loadDiktatSecret(),
     loadDiktatAbsender(),
+    loadForwardingSenders(),
   ]);
 }
 
@@ -3038,6 +3060,30 @@ async function saveDiktatAbsender() {
   try {
     await req('PUT', '/settings/diktat_email_absender', { value: v });
     toast(v ? `Absender-Pattern gespeichert: ${v}` : 'Absender zurückgesetzt — wieder Default @plaud.ai', 'ok');
+  } catch(e) {
+    toast('Fehler: ' + e.message, 'err');
+  }
+}
+
+// ── WEITERLEITUNGS-ABSENDER ───────────────────────────────────────────────────
+async function loadForwardingSenders() {
+  try {
+    const s = await req('GET', '/settings');
+    document.getElementById('s-fwd-senders').value = s.forwarding_trusted_senders || '';
+  } catch(_) {}
+}
+
+async function saveForwardingSenders() {
+  const v = document.getElementById('s-fwd-senders').value
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(Boolean)
+    .join('\n');
+  try {
+    await req('PUT', '/settings/forwarding_trusted_senders', { value: v });
+    document.getElementById('s-fwd-senders').value = v;
+    const n = v ? v.split('\n').length : 0;
+    toast(n ? `${n} Weiterleitungs-Adresse${n === 1 ? '' : 'n'} gespeichert ✓` : 'Liste geleert — keine Weiterleitungs-Erkennung aktiv', 'ok');
   } catch(e) {
     toast('Fehler: ' + e.message, 'err');
   }
