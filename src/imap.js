@@ -131,6 +131,7 @@ async function syncAccount(account) {
       for (const msg of neueMsgs) {
         let bodyText = '';
         let anhangPfade = [];
+        let plaudTranscript = null;
         try {
           for await (const full of client.fetch(
             { uid: `${msg.uid}:${msg.uid}` },
@@ -153,6 +154,13 @@ async function syncAccount(account) {
                 );
                 anhangPfade.push({ name: att.filename, pfad, typ: att.contentType, groesse: att.size });
               } catch (e) { /* Anhang-Fehler ignorieren */ }
+              // Plaud verschickt das eigentliche Transkript als .txt-Anhang —
+              // der Mail-Body enthält nur "Autoflow execution completed.".
+              if (!plaudTranscript
+                  && /\.txt$/i.test(att.filename || '')
+                  && /transkript|transcript/i.test(att.filename || '')) {
+                try { plaudTranscript = att.content.toString('utf8'); } catch (e) {}
+              }
             }
           }
         } catch (e) { /* Body optional */ }
@@ -163,7 +171,8 @@ async function syncAccount(account) {
         // Plaud-Diktat per E-Mail: vor dem regulären INSERT abfangen.
         // Bei Erfolg wandert die Mail in den IMAP-"Erledigt"-Ordner, kein DB-Insert.
         if (plaudPattern && fromEmail.includes(plaudPattern)) {
-          const transkript = cleanPlaudBody(bodyText);
+          // Anhang bevorzugen (echtes Transkript), Body nur als Fallback.
+          const transkript = cleanPlaudBody(plaudTranscript || bodyText);
           if (transkript) {
             try {
               await diktatVerarbeiten({

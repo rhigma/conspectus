@@ -73,8 +73,11 @@ export async function diktatVerarbeiten({
   const analyse = await diktatAnalysieren(transkript, aufgenommenAm);
   const neueVorschlaege = normVorschlaege(analyse);
 
-  // 3) Vorgang auflösen
+  // 3) Vorgang auflösen — nur bestehende Vorgänge zuordnen.
+  //    Ein neuer Titel wird als Vorschlag im Eintrag gespeichert; der User
+  //    entscheidet selbst, ob daraus ein Vorgang wird.
   let vorgangId = analyse.vorgang_id ? parseInt(analyse.vorgang_id) : null;
+  let vorgangVorschlag = null;
   if (!vorgangId && analyse.vorgang_titel) {
     const vorhanden = await queryOne(
       'SELECT id FROM vorgaenge WHERE titel LIKE ? LIMIT 1',
@@ -83,12 +86,7 @@ export async function diktatVerarbeiten({
     if (vorhanden) {
       vorgangId = vorhanden.id;
     } else {
-      const ncPfad = await vorgangOrdner(analyse.vorgang_titel).catch(() => null);
-      const result = await query(
-        'INSERT INTO vorgaenge (titel, typ, beschreibung, nc_ordner) VALUES (?,?,?,?)',
-        [analyse.vorgang_titel, 'sonstiges', `Aus Diktat: ${titel}`, ncPfad]
-      );
-      vorgangId = result.insertId;
+      vorgangVorschlag = analyse.vorgang_titel;
     }
   }
 
@@ -117,6 +115,7 @@ export async function diktatVerarbeiten({
     audio_pfad: audioPfad,
     quelle,
     zusammenfassung_plaud: zusammenfassungPlaud || null,
+    vorgang_vorschlag: vorgangVorschlag,
   };
   const eintragTitel = `Diktat: ${safeFilename(titel)}`;
   const result = await query(

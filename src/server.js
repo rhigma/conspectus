@@ -603,8 +603,11 @@ async function booxNotizVerarbeiten(pfad, zielOrdner) {
     return { pfad, vorgangId: existing.vorgang_id, neue_seiten: analyse.neue_seiten, vorschlaege: offen, analyse: altAnalyse };
   }
 
-  // Erstverarbeitung: Vorgang-ID auflösen (direkt, per Titelsuche, oder neu anlegen)
+  // Erstverarbeitung: Vorgang-ID auflösen — nur bestehende Vorgänge zuordnen.
+  // Ein neuer Titel wird als Vorschlag gespeichert; der User entscheidet selbst,
+  // ob daraus ein Vorgang wird.
   let vorgangId = analyse.vorgang_id ? parseInt(analyse.vorgang_id) : null;
+  let vorgangVorschlag = null;
   if (!vorgangId && analyse.vorgang_titel) {
     const vorhanden = await queryOne(
       'SELECT id FROM vorgaenge WHERE titel LIKE ? LIMIT 1',
@@ -613,18 +616,32 @@ async function booxNotizVerarbeiten(pfad, zielOrdner) {
     if (vorhanden) {
       vorgangId = vorhanden.id;
     } else {
-      const ncPfad = await vorgangOrdner(analyse.vorgang_titel).catch(() => null);
+      vorgangVorschlag = analyse.vorgang_titel;
+    }
+  }
+
+  // Fallback: Sammel-Vorgang als Halte-Box, damit der Eintrag auffindbar bleibt.
+  if (!vorgangId) {
+    const sammel = await queryOne(
+      `SELECT id FROM vorgaenge WHERE titel = 'Notizen ohne Zuordnung' LIMIT 1`
+    );
+    if (sammel) {
+      vorgangId = sammel.id;
+    } else {
+      const ncPfad = await vorgangOrdner('Notizen ohne Zuordnung').catch(() => null);
       const result = await query(
-        'INSERT INTO vorgaenge (titel, typ, beschreibung, nc_ordner) VALUES (?,?,?,?)',
-        [analyse.vorgang_titel, 'sonstiges', `Aus Boox-Notiz: ${dateiname}`, ncPfad]
+        `INSERT INTO vorgaenge (titel, typ, beschreibung, nc_ordner)
+         VALUES ('Notizen ohne Zuordnung', 'sonstiges', 'Sammelvorgang für nicht zugeordnete PDF-Notizen', ?)`,
+        [ncPfad]
       );
       vorgangId = result.insertId;
     }
   }
 
+  const inhaltMitVorschlag = { ...neueVorschlaege, vorgang_vorschlag: vorgangVorschlag };
   await query(
     'INSERT INTO vorgang_eintraege (vorgang_id, typ, titel, inhalt, datei_pfad) VALUES (?,?,?,?,?)',
-    [vorgangId, 'notiz', `Boox: ${dateiname}`, JSON.stringify(neueVorschlaege), pfad]
+    [vorgangId, 'notiz', `Boox: ${dateiname}`, JSON.stringify(inhaltMitVorschlag), pfad]
   );
 
   await booxVerarbeitet(pfad);
@@ -852,6 +869,52 @@ app.post('/boox/:eintragId/reset', async (req, res) => {
     const items = listFor(analyse, typ);
     if (!items[index]) return res.status(404).json({ error: 'Vorschlag-Index ungültig' });
     items[index] = { ...items[index], status: 'offen', ref_id: null };
+    await query('UPDATE vorgang_eintraege SET inhalt = ? WHERE id = ?', [JSON.stringify(analyse), eintragId]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Vorgangs-Vorschlag aus einem Eintrag (Diktat oder Boox-Notiz) annehmen:
+// legt einen neuen Vorgang mit dem vorgeschlagenen Titel an, hängt den
+// Eintrag dorthin um, und entfernt den Vorschlag aus dem inhalt-JSON.
+app.post('/boox/:eintragId/vorgang-aus-vorschlag', async (req, res) => {
+  try {
+    const eintragId = parseInt(req.params.eintragId);
+    const { row, analyse } = await loadBooxEintrag(eintragId);
+    const titelRaw = (req.body?.titel || analyse.vorgang_vorschlag || '').trim();
+    if (!titelRaw) return res.status(400).json({ error: 'Kein Vorschlag vorhanden' });
+
+    const vorhanden = await queryOne(
+      'SELECT id FROM vorgaenge WHERE titel LIKE ? LIMIT 1',
+      [`%${titelRaw}%`]
+    );
+    let vorgangId;
+    if (vorhanden) {
+      vorgangId = vorhanden.id;
+    } else {
+      const ncPfad = await vorgangOrdner(titelRaw).catch(() => null);
+      const r = await query(
+        'INSERT INTO vorgaenge (titel, typ, beschreibung, nc_ordner) VALUES (?,?,?,?)',
+        [titelRaw, 'sonstiges', `Aus Vorschlag (Eintrag #${eintragId})`, ncPfad]
+      );
+      vorgangId = r.insertId;
+    }
+
+    delete analyse.vorgang_vorschlag;
+    await query(
+      'UPDATE vorgang_eintraege SET vorgang_id = ?, inhalt = ? WHERE id = ?',
+      [vorgangId, JSON.stringify(analyse), eintragId]
+    );
+    res.json({ ok: true, vorgang_id: vorgangId, neu: !vorhanden });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Vorschlag verwerfen — Eintrag bleibt im Sammel-Vorgang.
+app.post('/boox/:eintragId/vorschlag-verwerfen', async (req, res) => {
+  try {
+    const eintragId = parseInt(req.params.eintragId);
+    const { analyse } = await loadBooxEintrag(eintragId);
+    delete analyse.vorgang_vorschlag;
     await query('UPDATE vorgang_eintraege SET inhalt = ? WHERE id = ?', [JSON.stringify(analyse), eintragId]);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }

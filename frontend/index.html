@@ -251,7 +251,13 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
 .boox-chip.vorgang{background:var(--accentl);color:var(--accent);cursor:pointer}
 .boox-chip.vorgang:hover{filter:brightness(.95)}
 .boox-chip.error{background:#fde2e2;color:#a33}
+.boox-chip.vorschlag{background:#fff3cd;color:#7a5b00}
 [data-theme="dark"] .boox-chip.error{background:#5a2424;color:#f3b8b8}
+[data-theme="dark"] .boox-chip.vorschlag{background:#4a3d10;color:#f0d57a}
+.boox-vorschlag-banner{margin:8px 0 14px;padding:10px 12px;border-radius:var(--r);background:#fff3cd;border:1px solid #e6c66a;display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:12px;color:#5a4400}
+.boox-vorschlag-banner .titel{font-family:'IBM Plex Mono',monospace;font-size:11px;background:rgba(255,255,255,.6);padding:2px 6px;border-radius:3px}
+[data-theme="dark"] .boox-vorschlag-banner{background:#4a3d10;border-color:#7a6428;color:#f0d57a}
+[data-theme="dark"] .boox-vorschlag-banner .titel{background:rgba(0,0,0,.25)}
 .boox-vorschlag{border:1px solid var(--border);border-radius:var(--r);padding:10px 12px;margin-bottom:8px;background:var(--paper2)}
 .boox-vorschlag.uebernommen{border-color:var(--green);background:var(--greenl)}
 .boox-vorschlag.verworfen{opacity:.5;background:var(--paper3)}
@@ -3897,8 +3903,19 @@ function renderBoox() {
 
     const quelldateiLabel = isDiktat ? 'Audio-Datei' : 'Quelldatei';
 
+    const vorschlag = (ki.vorgang_vorschlag || '').trim();
+    const vorschlagBanner = vorschlag ? `
+      <div class="boox-vorschlag-banner">
+        <span>💡 Neuer Vorgang vorgeschlagen:</span>
+        <span class="titel">${esc(vorschlag)}</span>
+        <span style="flex:1"></span>
+        <button class="boox-btn primary" onclick="vorgangAusVorschlag(${r.id})">Vorgang anlegen</button>
+        <button class="boox-btn" onclick="vorschlagVerwerfen(${r.id})">Verwerfen</button>
+      </div>` : '';
+
     const detail = open ? `
       <div class="boox-detail">
+        ${vorschlagBanner}
         ${ki.zusammenfassung ? `<h4>Zusammenfassung</h4><div>${esc(ki.zusammenfassung)}</div>` : ''}
         ${audioBlock}
         ${ki.transkription ? `<h4>Transkription</h4><div class="transkr">${esc(ki.transkription)}</div>` : ''}
@@ -3912,6 +3929,9 @@ function renderBoox() {
     const vorgangChip = r.vorgang_id
       ? `<span class="boox-chip vorgang" onclick="event.stopPropagation();openVorgang(${r.vorgang_id})">◈ ${esc(r.vorgang_titel || '#'+r.vorgang_id)}</span>`
       : '<span class="boox-chip">– kein Vorgang</span>';
+    const vorschlagChip = vorschlag
+      ? `<span class="boox-chip vorschlag" title="Vorschlag im Detail bestätigen">💡 ${esc(vorschlag)}</span>`
+      : '';
 
     return `
       <div class="boox-card">
@@ -3920,6 +3940,7 @@ function renderBoox() {
             <div class="boox-titel">${icon} ${esc(titelClean || 'Notiz')}</div>
             <div class="boox-meta">
               ${vorgangChip}
+              ${vorschlagChip}
               ${meta ? `<span>${meta}</span>` : ''}
               ${fehler ? '<span class="boox-chip error">Fehler</span>' : ''}
             </div>
@@ -4038,6 +4059,25 @@ async function booxVerwerfen(eintragId, typ, index) {
 async function booxReset(eintragId, typ, index) {
   try {
     await req('POST', `/boox/${eintragId}/reset`, { typ, index });
+    await loadBoox();
+  } catch(e) {
+    toast('Fehler: ' + e.message, 'error');
+  }
+}
+
+async function vorgangAusVorschlag(eintragId) {
+  try {
+    const r = await req('POST', `/boox/${eintragId}/vorgang-aus-vorschlag`);
+    toast(r.neu ? 'Vorgang angelegt ✓' : 'Eintrag bestehendem Vorgang zugeordnet ✓', 'ok');
+    await loadBoox();
+  } catch(e) {
+    toast('Fehler: ' + e.message, 'error');
+  }
+}
+
+async function vorschlagVerwerfen(eintragId) {
+  try {
+    await req('POST', `/boox/${eintragId}/vorschlag-verwerfen`);
     await loadBoox();
   } catch(e) {
     toast('Fehler: ' + e.message, 'error');
