@@ -2605,26 +2605,63 @@ async function openVorgang(id) {
   } catch(e) { document.getElementById('detail-body').innerHTML = '<div class="empty">Fehler: ' + esc(e.message) + '</div>'; }
 }
 
+function parseAnhangPfade(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+  try { const v = JSON.parse(raw); return Array.isArray(v) ? v : []; } catch { return []; }
+}
+
+function renderEmailAnhaengeInline(email) {
+  const liste = parseAnhangPfade(email?.anhang_pfade);
+  if (!liste.length) return '';
+  return `
+    <div class="anhang-block" style="margin-top:10px;padding-top:10px">
+      <div class="anhang-titel">📎 Anhänge (${liste.length})</div>
+      ${liste.map((a, i) => renderAnhang(email.id, i, a)).join('')}
+    </div>`;
+}
+
 function renderDateienCard(v) {
   const dateien = (v.eintraege || []).filter(e => e.typ === 'datei');
-  const liste = dateien.length
-    ? dateien.map(e => {
-        let meta = {};
-        try { meta = JSON.parse(e.inhalt || '{}'); } catch (_) {}
-        const url = `/api/vorgaenge/${v.id}/dateien/${e.id}?key=${encodeURIComponent(SECRET)}`;
-        return `
-          <div class="datei-row">
-            <a class="datei-name" href="${url}" target="_blank" rel="noopener" title="${esc(e.titel)}">${esc(e.titel)}</a>
-            <span class="datei-meta">${fmtBytes(meta.groesse || 0)}</span>
-            <a class="datei-dl" href="${url}&download=1" title="Herunterladen">↓</a>
-            <button class="datei-del" onclick="dateiLoeschen(${v.id},${e.id})" title="Aus Vorgang entfernen">×</button>
-          </div>`;
-      }).join('')
+  const dateiHtml = dateien.map(e => {
+    let meta = {};
+    try { meta = JSON.parse(e.inhalt || '{}'); } catch (_) {}
+    const url = `/api/vorgaenge/${v.id}/dateien/${e.id}?key=${encodeURIComponent(SECRET)}`;
+    return `
+      <div class="datei-row">
+        <a class="datei-name" href="${url}" target="_blank" rel="noopener" title="${esc(e.titel)}">${esc(e.titel)}</a>
+        <span class="datei-meta">${fmtBytes(meta.groesse || 0)}</span>
+        <a class="datei-dl" href="${url}&download=1" title="Herunterladen">↓</a>
+        <button class="datei-del" onclick="dateiLoeschen(${v.id},${e.id})" title="Aus Vorgang entfernen">×</button>
+      </div>`;
+  }).join('');
+
+  // E-Mail-Anhänge der zugeordneten Mails — eine Zeile pro Anhang, mit Quelle.
+  const mailAnhaenge = [];
+  for (const e of (v.emails || [])) {
+    const liste = parseAnhangPfade(e.anhang_pfade);
+    liste.forEach((a, idx) => mailAnhaenge.push({ a, idx, email: e }));
+  }
+  const mailHtml = mailAnhaenge.map(({ a, idx, email }) => {
+    const url = `/api/emails/${email.id}/anhang/${idx}?key=${encodeURIComponent(SECRET)}`;
+    const betreff = email.subject || '(kein Betreff)';
+    return `
+      <div class="datei-row">
+        <a class="datei-name" href="${url}" target="_blank" rel="noopener" title="aus E-Mail: ${esc(betreff)}">📧 ${esc(a.name || 'anhang')}</a>
+        <span class="datei-meta">${fmtBytes(a.groesse || 0)}</span>
+        <a class="datei-dl" href="${url}&download=1" title="Herunterladen">↓</a>
+      </div>`;
+  }).join('');
+
+  const gesamt = dateien.length + mailAnhaenge.length;
+  const liste = (dateiHtml || mailHtml)
+    ? dateiHtml + (mailHtml ? `${dateiHtml ? '<div style="font-size:9px;font-family:\'IBM Plex Mono\',monospace;text-transform:uppercase;letter-spacing:.08em;color:var(--ink3);margin:8px 0 4px;padding-top:6px;border-top:1px dashed var(--border)">aus E-Mails</div>' : ''}${mailHtml}` : '')
     : '<div class="datei-empty">Noch keine Dateien</div>';
+
   return `<div class="card" style="padding:14px">
     <div class="card-header" style="margin-bottom:8px">
       <span class="card-title">📎 Dateien</span>
-      <span class="card-count">${dateien.length}</span>
+      <span class="card-count">${gesamt}</span>
     </div>
     <div class="datei-liste">${liste}</div>
     <div class="datei-drop" id="datei-drop-${v.id}"
@@ -2684,16 +2721,20 @@ function renderDetail(v, todos = []) {
 
   const icons = { email:'✉', notiz:'✎', datei:'◻', delegation:'→', termin:'◷', ki_analyse:'◈' };
 
-  const chronHtml = all.length ? all.map((e,i) => `
+  const chronHtml = all.length ? all.map((e,i) => {
+    const anhaengeBlock = e.typ === 'email' ? renderEmailAnhaengeInline(e.ref) : '';
+    return `
     <div class="chron-item">
       <div class="chron-icon ${e.typ}">${icons[e.typ]||'·'}</div>
       <div class="chron-content">
         <div class="chron-title">${esc(e.titel)}</div>
         <div class="chron-text" id="ct-${i}">${esc(e.inhalt||'').replace(/\n/g,'<br>')}</div>
         ${(e.inhalt||'').length > 200 ? `<button class="expand-btn" onclick="toggleExpand('ct-${i}',this)">Mehr anzeigen ↓</button>` : ''}
+        ${anhaengeBlock}
         <div class="chron-time">${fmtDateTime(e.time)}</div>
       </div>
-    </div>`).join('')
+    </div>`;
+  }).join('')
     : '<div class="empty" style="padding:20px 0">Noch keine Einträge</div>';
 
   const delegHtml = v.delegationen.length ? v.delegationen.map(d => `
