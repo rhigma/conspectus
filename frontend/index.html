@@ -890,6 +890,7 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
           <h2>E-Mails</h2>
           <input class="search-input" id="emails-search" placeholder="Suchen…" oninput="filterEmailsView()" style="width:200px"/>
           <button class="filter-btn" id="emails-erledigt-toggle" onclick="toggleEmailsErledigt()">Nicht erledigt</button>
+          <button class="filter-btn" id="emails-zuord-toggle" onclick="toggleEmailsZuord()">Alle Zuordnungen</button>
           <button class="filter-btn" id="emails-sync-btn" onclick="doSync(true)">↺ Sync</button>
           <span id="emails-count" style="font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace"></span>
         </div>
@@ -4325,6 +4326,7 @@ function toast(msg,type=''){ document.querySelector('.toast')?.remove();clearTim
 // ── E-MAIL VERWALTUNG ─────────────────────────────────────────────────────────
 let _emlNurAktiv = true;      // false = zeige auch erledigte
 let _emlThema = null;          // null = alle, string = Schlagwort-Filter
+let _emlZuord = 'alle';        // 'alle' | 'zug' (zugeordnet) | 'unzug' (nicht zugeordnet)
 let _emlDaten = [];            // gecachte Rohdaten
 
 function tryParseKi(json) {
@@ -4379,6 +4381,9 @@ function renderEmailsView() {
   if (_emlThema != null) {
     rows = rows.filter(e => (tryParseKi(e.ki_einordnung)?.schlagworte || []).includes(_emlThema));
   }
+
+  if (_emlZuord === 'zug')   rows = rows.filter(e => e.vorgang_id != null);
+  if (_emlZuord === 'unzug') rows = rows.filter(e => e.vorgang_id == null);
 
   if (q) rows = rows.filter(e =>
     (e.subject||'').toLowerCase().includes(q) ||
@@ -4436,6 +4441,16 @@ function toggleEmailsErledigt() {
   btn.classList.toggle('active', !_emlNurAktiv);
   _emlThema = null;
   loadEmailsView();
+}
+
+function toggleEmailsZuord() {
+  _emlZuord = _emlZuord === 'alle' ? 'zug' : _emlZuord === 'zug' ? 'unzug' : 'alle';
+  const btn = document.getElementById('emails-zuord-toggle');
+  btn.textContent = _emlZuord === 'zug' ? 'Zugeordnet'
+    : _emlZuord === 'unzug' ? 'Nicht zugeordnet'
+    : 'Alle Zuordnungen';
+  btn.classList.toggle('active', _emlZuord !== 'alle');
+  renderEmailsView();
 }
 
 // ── BOOX-NOTIZEN ──────────────────────────────────────────────────────────────
