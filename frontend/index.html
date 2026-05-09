@@ -232,6 +232,13 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
 .status-select.abgeschlossen{background:var(--greenl);color:var(--green);border-color:transparent}
 .status-select.in_bearbeitung{background:var(--bluel);color:var(--blue);border-color:transparent}
 .status-select.wartet{background:var(--goldl);color:var(--gold);border-color:transparent}
+.typ-select{font-size:9px;padding:2px 6px;border-radius:20px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.06em;background:var(--paper3);color:var(--ink3);border:1px solid transparent;cursor:pointer;outline:none}
+.typ-select:hover{border-color:var(--accent2)}
+.typ-select.personal{background:var(--accentl);color:var(--accent)}
+.typ-select.behoerde{background:var(--bluel);color:var(--blue)}
+.typ-select.veranstaltung{background:var(--greenl);color:var(--green)}
+.typ-select.planung{background:var(--goldl);color:var(--gold)}
+.typ-select.sonstiges{background:var(--paper3);color:var(--ink3)}
 .vorgang-deadline{font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace}
 .vorgang-deadline.ueberfaellig{color:var(--accent);font-weight:500}
 .boox-card{background:#fff;border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;transition:all .15s}
@@ -1011,6 +1018,23 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
           <div id="s-person-list"><div class="loading-row"><div class="spin"></div>Lade…</div></div>
         </div>
 
+        <!-- VORGANGS-TYPEN -->
+        <div class="card">
+          <div class="card-header"><span class="card-title">◫ Vorgangs-Typen</span></div>
+          <div style="font-size:11px;color:var(--ink2);line-height:1.65;margin-bottom:10px">
+            Kategorien für Vorgänge. Standard-Typen sind fest; eigene Typen kannst du hier ergänzen und im Vorgang auswählen.
+          </div>
+          <div id="s-typen-list"><div class="loading-row"><div class="spin"></div>Lade…</div></div>
+          <div style="margin-top:12px;padding-top:12px;border-top:1px dashed var(--border)">
+            <div style="font-size:10px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.1em;color:var(--ink3);margin-bottom:6px">Neuer Typ</div>
+            <div style="display:flex;gap:6px;align-items:center">
+              <input id="s-typ-label" placeholder="Bezeichnung (z. B. Schulkonferenz)" style="flex:1;padding:7px 8px;border:1px solid var(--border);border-radius:var(--r);font-family:'IBM Plex Sans',sans-serif;font-size:12px;background:var(--paper);color:var(--ink)"/>
+              <input id="s-typ-color" type="color" value="#8fb87a" title="Farbe" style="width:36px;height:32px;padding:1px;border:1px solid var(--border);border-radius:var(--r);background:var(--paper);cursor:pointer"/>
+              <button onclick="addVorgangTyp()" style="padding:8px 12px;background:var(--accent);color:#fff;border:none;border-radius:var(--r);font-family:'IBM Plex Mono',monospace;font-size:11px;cursor:pointer;white-space:nowrap">+ Hinzufügen</button>
+            </div>
+          </div>
+        </div>
+
         <!-- TODO-KALENDER -->
         <div class="card">
           <div class="card-header"><span class="card-title">☑ Todo-Kalender</span></div>
@@ -1376,13 +1400,7 @@ html,body{height:100%;background:var(--paper);color:var(--ink);font-family:'IBM 
     <h2>Neuer Vorgang</h2>
     <div class="mf"><label>Titel</label><input id="nv-titel" placeholder="z.B. Vera 3 2026"/></div>
     <div class="mf"><label>Typ</label>
-      <select id="nv-typ">
-        <option value="personal">Personal</option>
-        <option value="behoerde">Behörde</option>
-        <option value="veranstaltung">Veranstaltung</option>
-        <option value="planung">Planung</option>
-        <option value="sonstiges" selected>Sonstiges</option>
-      </select>
+      <select id="nv-typ"></select>
     </div>
     <div class="mf"><label>Priorität</label>
       <select id="nv-prio">
@@ -1524,6 +1542,7 @@ function boot() {
   const greeting = h < 11 ? 'Guten Morgen' : h < 14 ? 'Guten Tag' : h < 18 ? 'Guten Nachmittag' : 'Guten Abend';
   document.getElementById('dash-greeting').textContent = greeting;
   document.getElementById('dash-date').textContent = now.toLocaleDateString('de-DE', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+  loadVorgangTypen();
   loadStats();
   loadDashboard();
   addWelcomeMsg();
@@ -1574,7 +1593,7 @@ async function loadWiedervorlage() {
     cnt.textContent = rows.length;
     list.innerHTML = rows.map(v => `
       <div class="deleg-row" style="cursor:pointer" onclick="openVorgang(${v.id})">
-        <span class="vtag ${v.typ}" style="flex-shrink:0">${v.typ}</span>
+        <span style="flex-shrink:0">${typTagHtml(v.typ)}</span>
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(v.titel)}</div>
           <div style="font-size:11px;color:var(--ink3);font-family:'IBM Plex Mono',monospace">seit ${fmtDate(v.wiedervorlage_am)}</div>
@@ -2528,7 +2547,11 @@ async function loadVorgaenge() {
   el.innerHTML = '<div class="loading-row"><div class="spin"></div>Lade Vorgänge…</div>';
   try {
     const params = vorgangFilter ? `?status=${vorgangFilter}` : '';
-    allVorgaenge = await req('GET', '/vorgaenge' + params);
+    const [vs] = await Promise.all([
+      req('GET', '/vorgaenge' + params),
+      _vorgangTypen.length ? Promise.resolve() : loadVorgangTypen(),
+    ]);
+    allVorgaenge = vs;
     renderVorgaenge(allVorgaenge);
   } catch(e) { el.innerHTML = '<div class="empty">Fehler: ' + esc(e.message) + '</div>'; }
 }
@@ -2558,7 +2581,7 @@ function renderVorgaenge(list) {
       <div class="vorgang-main">
         <div class="vorgang-titel">${esc(v.titel)}</div>
         <div class="vorgang-meta">
-          <span class="vtag ${v.typ}">${v.typ}</span>
+          ${typTagHtml(v.typ)}
           <span class="vtag status">${v.status.replace('_',' ')}</span>
           ${dlStr ? `<span class="vorgang-deadline ${ueb?'ueberfaellig':''}">${dlStr}</span>` : ''}
         </div>
@@ -2590,8 +2613,9 @@ async function openVorgang(id) {
       req('GET', `/todos?vorgang_id=${id}`),
     ]);
     document.getElementById('detail-titel').textContent = v.titel;
+    if (!_vorgangTypen.length) await loadVorgangTypen();
     document.getElementById('detail-tags').innerHTML = [
-      `<span class="vtag ${v.typ}">${v.typ}</span>`,
+      typSelectHtml(v),
       `<select class="status-select ${v.status}" onchange="setVorgangStatus(${v.id},this)">
         <option value="offen"${v.status==='offen'?' selected':''}>offen</option>
         <option value="in_bearbeitung"${v.status==='in_bearbeitung'?' selected':''}>in bearbeitung</option>
@@ -2931,6 +2955,56 @@ async function setVorgangStatus(id, sel) {
   } catch(e) { toast('Fehler: ' + e.message, 'err'); }
 }
 
+// ── VORGANGS-TYPEN ────────────────────────────────────────────────────────────
+let _vorgangTypen = [];
+const STD_TYPEN = ['personal','behoerde','veranstaltung','planung','sonstiges'];
+
+async function loadVorgangTypen() {
+  try { _vorgangTypen = await req('GET', '/vorgang-typen'); }
+  catch(_) { _vorgangTypen = []; }
+}
+
+function getTypInfo(key) {
+  return _vorgangTypen.find(t => t.key === key) || { key, label: key, color: null, custom: 1 };
+}
+
+function typTagStyle(typ) {
+  // Nur custom-Typen mit eigener Farbe brauchen inline-style
+  const info = getTypInfo(typ);
+  if (info.color) return ` style="background:${esc(info.color)}33;color:${esc(info.color)}"`;
+  return '';
+}
+
+function typTagHtml(typ) {
+  const info = getTypInfo(typ);
+  const cls = STD_TYPEN.includes(typ) ? typ : 'sonstiges';
+  return `<span class="vtag ${cls}"${typTagStyle(typ)}>${esc(info.label)}</span>`;
+}
+
+function typSelectHtml(v) {
+  const info = getTypInfo(v.typ);
+  const cls = STD_TYPEN.includes(v.typ) ? v.typ : '';
+  // Style nur wenn custom-color gesetzt ist
+  const style = info.color ? ` style="background:${esc(info.color)}33;color:${esc(info.color)}"` : '';
+  const opts = _vorgangTypen.map(t => `<option value="${esc(t.key)}"${t.key===v.typ?' selected':''}>${esc(t.label)}</option>`).join('');
+  // Falls aktueller typ nicht in der Liste ist (Edge-Case), trotzdem als selected anzeigen
+  const fallback = !_vorgangTypen.some(t => t.key === v.typ)
+    ? `<option value="${esc(v.typ)}" selected>${esc(v.typ)}</option>` : '';
+  return `<select class="typ-select ${cls}"${style} onchange="setVorgangTyp(${v.id},this)">${fallback}${opts}</select>`;
+}
+
+async function setVorgangTyp(id, sel) {
+  const typ = sel.value;
+  try {
+    await req('PATCH', `/vorgaenge/${id}`, { typ });
+    const info = getTypInfo(typ);
+    const cls = STD_TYPEN.includes(typ) ? typ : '';
+    sel.className = 'typ-select ' + cls;
+    sel.style.cssText = info.color ? `background:${info.color}33;color:${info.color}` : '';
+    if (document.getElementById('v-vorgaenge')?.classList.contains('active')) loadVorgaenge();
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+}
+
 function chatUeberVorgang(id, titel) {
   showView('chat');
   document.getElementById('n-chat').classList.add('active');
@@ -2938,7 +3012,14 @@ function chatUeberVorgang(id, titel) {
 }
 
 // ── NEUE OBJEKTE ───────────────────────────────────────────────────────────────
-function openNewVorgang() { document.getElementById('m-vorgang').style.display='flex'; }
+async function openNewVorgang() {
+  if (!_vorgangTypen.length) await loadVorgangTypen();
+  const sel = document.getElementById('nv-typ');
+  sel.innerHTML = _vorgangTypen.map(t =>
+    `<option value="${esc(t.key)}"${t.key==='sonstiges'?' selected':''}>${esc(t.label)}</option>`
+  ).join('');
+  document.getElementById('m-vorgang').style.display='flex';
+}
 async function saveVorgang() {
   const titel = g('nv-titel');
   if (!titel) { toast('Bitte Titel eingeben', 'err'); return; }
@@ -3101,6 +3182,7 @@ async function loadEinstellungen() {
     loadSettingsEmails(),
     loadSettingsCals(),
     loadSettingsPersonen(),
+    loadSettingsVorgangTypen(),
     loadSystemInfo(),
     loadTodoKalenderSetting(),
     loadPushoverSettings(),
@@ -3110,6 +3192,66 @@ async function loadEinstellungen() {
     loadDiktatAbsender(),
     loadForwardingSenders(),
   ]);
+}
+
+async function loadSettingsVorgangTypen() {
+  const el = document.getElementById('s-typen-list');
+  try {
+    await loadVorgangTypen();
+    if (!_vorgangTypen.length) {
+      el.innerHTML = '<div style="font-size:11px;color:var(--ink3);font-family:\'IBM Plex Mono\',monospace;padding:8px 0">Keine Typen.</div>';
+      return;
+    }
+    el.innerHTML = _vorgangTypen.map(t => {
+      const swatch = t.color
+        ? `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${esc(t.color)};border:1px solid var(--border);flex-shrink:0"></span>`
+        : '<span style="display:inline-block;width:10px;height:10px;flex-shrink:0"></span>';
+      const badge = t.custom
+        ? '<span style="font-size:9px;font-family:\'IBM Plex Mono\',monospace;color:var(--ink3);text-transform:uppercase;letter-spacing:.08em">eigen</span>'
+        : '<span style="font-size:9px;font-family:\'IBM Plex Mono\',monospace;color:var(--ink3);text-transform:uppercase;letter-spacing:.08em">standard</span>';
+      const usage = t.anzahl > 0
+        ? `<span style="font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace">${t.anzahl}×</span>`
+        : '';
+      const delBtn = t.custom
+        ? `<button onclick="deleteVorgangTyp('${esc(t.key)}','${esc(t.label)}',${t.anzahl})" title="${t.anzahl>0?'In Verwendung – erst alle Vorgänge umstellen':'Entfernen'}" style="font-size:10px;color:${t.anzahl>0?'var(--ink3)':'var(--accent)'};background:none;border:none;cursor:${t.anzahl>0?'not-allowed':'pointer'};font-family:'IBM Plex Mono',monospace">×</button>`
+        : '';
+      return `
+        <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--paper2)">
+          ${swatch}
+          <div style="flex:1;min-width:0">
+            <div style="font-size:12px;color:var(--ink)">${esc(t.label)}</div>
+            <div style="font-size:10px;color:var(--ink3);font-family:'IBM Plex Mono',monospace">${esc(t.key)}</div>
+          </div>
+          ${usage}
+          ${badge}
+          ${delBtn}
+        </div>`;
+    }).join('');
+  } catch(e) {
+    el.innerHTML = `<span style="color:var(--accent);font-size:11px">${esc(e.message)}</span>`;
+  }
+}
+
+async function addVorgangTyp() {
+  const label = document.getElementById('s-typ-label').value.trim();
+  const color = document.getElementById('s-typ-color').value;
+  if (!label) { toast('Bitte Bezeichnung eingeben', 'err'); return; }
+  try {
+    await req('POST', '/vorgang-typen', { label, color });
+    document.getElementById('s-typ-label').value = '';
+    toast('Typ hinzugefügt ✓', 'ok');
+    loadSettingsVorgangTypen();
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
+}
+
+async function deleteVorgangTyp(key, label, anzahl) {
+  if (anzahl > 0) { toast(`„${label}" wird noch von ${anzahl} Vorgang/Vorgängen verwendet`, 'err'); return; }
+  if (!confirm(`Typ „${label}" wirklich entfernen?`)) return;
+  try {
+    await req('DELETE', `/vorgang-typen/${encodeURIComponent(key)}`);
+    toast('Typ entfernt ✓', 'ok');
+    loadSettingsVorgangTypen();
+  } catch(e) { toast('Fehler: ' + e.message, 'err'); }
 }
 
 let _pdfNotizOrdner = [];

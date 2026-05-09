@@ -261,6 +261,56 @@ app.post('/personen', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── VORGANGS-TYPEN ────────────────────────────────────────────────────────────
+app.get('/vorgang-typen', async (req, res) => {
+  try {
+    const rows = await query(`
+      SELECT t.\`key\`, t.label, t.color, t.custom, t.sort_order,
+        (SELECT COUNT(*) FROM vorgaenge v WHERE v.typ = t.\`key\`) AS anzahl
+      FROM vorgang_typen t
+      ORDER BY t.sort_order ASC, t.label ASC
+    `);
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/vorgang-typen', async (req, res) => {
+  try {
+    const { label, color } = req.body;
+    if (!label || !label.trim()) return res.status(400).json({ error: 'Bezeichnung fehlt' });
+    // key automatisch aus label ableiten: kleinbuchstaben, umlaute ersetzt, alles andere als _
+    const key = label.trim().toLowerCase()
+      .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
+      .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 50);
+    if (!key) return res.status(400).json({ error: 'Bezeichnung enthält keine gültigen Zeichen' });
+
+    const exists = await queryOne('SELECT `key` FROM vorgang_typen WHERE `key` = ?', [key]);
+    if (exists) return res.status(409).json({ error: 'Typ existiert bereits' });
+
+    const colorClean = (color || '').trim() || null;
+    await query(
+      'INSERT INTO vorgang_typen (`key`, label, color, custom, sort_order) VALUES (?,?,?,1,50)',
+      [key, label.trim(), colorClean]
+    );
+    res.json({ key, label: label.trim(), color: colorClean, custom: 1 });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/vorgang-typen/:key', async (req, res) => {
+  try {
+    const key = req.params.key;
+    const t = await queryOne('SELECT `key`, custom FROM vorgang_typen WHERE `key` = ?', [key]);
+    if (!t) return res.status(404).json({ error: 'Nicht gefunden' });
+    if (!t.custom) return res.status(400).json({ error: 'Standard-Typ kann nicht gelöscht werden' });
+
+    const used = await queryOne('SELECT COUNT(*) AS n FROM vorgaenge WHERE typ = ?', [key]);
+    if (used.n > 0) return res.status(409).json({ error: `Typ wird noch von ${used.n} Vorgang/Vorgängen verwendet` });
+
+    await query('DELETE FROM vorgang_typen WHERE `key` = ?', [key]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── E-MAILS ───────────────────────────────────────────────────────────────────
 app.get('/emails', async (req, res) => {
   try {

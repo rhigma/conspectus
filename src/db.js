@@ -106,6 +106,19 @@ export async function initSchema() {
   await db.execute(`ALTER TABLE vorgaenge ADD COLUMN IF NOT EXISTS wiedervorlage_am DATE`);
   await db.execute(`ALTER TABLE vorgaenge ADD COLUMN IF NOT EXISTS imap_folder VARCHAR(500)`);
   await db.execute(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS imap_mailbox VARCHAR(500) NOT NULL DEFAULT 'INBOX'`);
+  // typ war ein ENUM mit fixen Werten — auf VARCHAR migrieren, damit eigene Typen möglich sind
+  await db.execute(`ALTER TABLE vorgaenge MODIFY COLUMN typ VARCHAR(50) NOT NULL DEFAULT 'sonstiges'`);
+
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS vorgang_typen (
+      \`key\`     VARCHAR(50) PRIMARY KEY,
+      label      VARCHAR(100) NOT NULL,
+      color      VARCHAR(20),
+      custom     TINYINT NOT NULL DEFAULT 1,
+      sort_order INT NOT NULL DEFAULT 100,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+  `);
 
   await db.execute(`
     CREATE TABLE IF NOT EXISTS vorgang_eintraege (
@@ -227,6 +240,19 @@ export async function initSchema() {
     await db.execute(`
       -- Personen werden über Einstellungen → Delegations-Personen konfiguriert
       -- Beispiel: INSERT INTO delegations_personen (name, rolle) VALUES ('Name', 'sekretariat')
+    `);
+  }
+
+  // Standard-Vorgangstypen seeden (nur wenn noch keine vorhanden)
+  const typen = await query('SELECT COUNT(*) as n FROM vorgang_typen');
+  if (typen[0].n === 0) {
+    await db.execute(`
+      INSERT INTO vorgang_typen (\`key\`, label, color, custom, sort_order) VALUES
+        ('personal',      'Personal',      NULL, 0, 10),
+        ('behoerde',      'Behörde',       NULL, 0, 20),
+        ('veranstaltung', 'Veranstaltung', NULL, 0, 30),
+        ('planung',       'Planung',       NULL, 0, 40),
+        ('sonstiges',     'Sonstiges',     NULL, 0, 99)
     `);
   }
 
