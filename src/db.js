@@ -22,8 +22,10 @@ export function getPool() {
     // MariaDB-Session ebenfalls auf UTC – damit NOW()/CURRENT_TIMESTAMP und
     // DATE_ADD-Vergleiche konsistent zur UTC-Konvention der Spalten passen,
     // auch wenn der DB-Server in einer anderen Zeitzone läuft.
+    // Hinweis: das connection-Event liefert die Roh-Connection (Callback-API),
+    // nicht den Promise-Wrapper – daher kein await/.catch() möglich.
     pool.on('connection', conn => {
-      conn.query("SET time_zone = '+00:00'").catch(() => {});
+      conn.query("SET time_zone = '+00:00'", () => {});
     });
   }
   return pool;
