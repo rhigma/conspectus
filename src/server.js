@@ -9,7 +9,7 @@ import { initSchema, query, queryOne } from './db.js';
 import { syncAllAccounts, moveToErledigt, syncErledigtStatus, vorgangFolderPath, renameVorgangFolderOnAllAccounts } from './imap.js';
 import { chat, executeAction, getTokenStats, emailEinordnen, notizAnalysieren, morgenbriefing, naturalSearchQuery, vorschlagKandidatenFiltern, diktatAnalysieren } from './ai.js';
 import { ncMkdir, ncUpload, neueBooxNotizen, booxVerarbeitet, ncDownload, vorgangOrdner, defaultZielOrdner, ncOrdnerExistiert, moveEmailAnhaengeZuVorgang, NC_BASIS, NC_VORGAENGE_BASIS, NC_EMAIL_ANHAENGE_BASIS, BOOX_PFAD, BOOX_VERARBEITET } from './nextcloud.js';
-import { createCalDavEvent, deleteCalDavEvent } from './caldav.js';
+import { createCalDavEvent, deleteCalDavEvent, berlinDtToUtc } from './caldav.js';
 import { diktatVerarbeiten } from './diktate.js';
 import { randomUUID, randomBytes, timingSafeEqual } from 'crypto';
 
@@ -949,15 +949,19 @@ app.post('/boox/:eintragId/uebernehmen', async (req, res) => {
       if (!titel) return res.status(400).json({ error: 'Titel fehlt' });
       const datum = merged.datum;
       if (!datum) return res.status(400).json({ error: 'Datum fehlt' });
-      const startDt = merged.uhrzeit
-        ? new Date(`${datum}T${merged.uhrzeit}:00`)
-        : new Date(datum);
+      // Eingaben aus der KI-Notizanalyse sind Berlin-Wandzeit → in UTC konvertieren
+      const startUtc = merged.uhrzeit
+        ? berlinDtToUtc(`${datum}T${merged.uhrzeit}`)
+        : datum;
+      const startDt = new Date(startUtc);
       if (isNaN(startDt.getTime())) return res.status(400).json({ error: 'Datum/Uhrzeit ungültig' });
-      const endDt = new Date(startDt.getTime() + 60 * 60 * 1000);
+      const endUtc = merged.uhrzeit
+        ? new Date(startDt.getTime() + 60 * 60 * 1000).toISOString()
+        : datum;
       const uid = `boox-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       const r = await query(
         'INSERT INTO events (vorgang_id, uid, title, start_time, end_time, all_day) VALUES (?,?,?,?,?,?)',
-        [row.vorgang_id, uid, titel, startDt.toISOString(), endDt.toISOString(), merged.uhrzeit ? 0 : 1]
+        [row.vorgang_id, uid, titel, startUtc, endUtc, merged.uhrzeit ? 0 : 1]
       );
       refId = r.insertId;
     }
@@ -1783,12 +1787,13 @@ app.get('/todos', async (req, res) => {
 app.post('/todos', async (req, res) => {
   try {
     const { vorgang_id, titel, beschreibung, faellig_am, wichtig, dringend } = req.body;
+    const faelligUtc = berlinDtToUtc(faellig_am);
     const setting = await queryOne("SELECT value FROM settings WHERE `key` = 'todo_calendar_id'");
     const calId = setting?.value ? parseInt(setting.value) : null;
 
     let eventUid = null;
     let eventCalId = null;
-    if (calId && faellig_am) {
+    if (calId && faelligUtc) {
       const quadrant = wichtig && dringend ? 'Sofort erledigen'
         : wichtig ? 'Terminieren'
         : dringend ? 'Delegieren' : 'Eliminieren';
@@ -1796,7 +1801,7 @@ app.post('/todos', async (req, res) => {
       await createCalDavEvent(calId, {
         uid: eventUid,
         title: `☑ ${titel}`,
-        start: faellig_am,
+        start: faelligUtc,
         description: beschreibung ? `${beschreibung}\n[${quadrant}]` : `[${quadrant}]`,
       });
       eventCalId = calId;
@@ -1804,7 +1809,7 @@ app.post('/todos', async (req, res) => {
 
     const result = await query(
       'INSERT INTO todos (vorgang_id, titel, beschreibung, faellig_am, wichtig, dringend, event_uid, calendar_id) VALUES (?,?,?,?,?,?,?,?)',
-      [vorgang_id, titel, beschreibung || null, faellig_am || null, wichtig ? 1 : 0, dringend ? 1 : 0, eventUid, eventCalId]
+      [vorgang_id, titel, beschreibung || null, faelligUtc || null, wichtig ? 1 : 0, dringend ? 1 : 0, eventUid, eventCalId]
     );
     res.json({ id: result.insertId });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -1828,6 +1833,7 @@ app.patch('/todos/:id', async (req, res) => {
       if (key in req.body) {
         updates.push(`${key} = ?`);
         if (key === 'wichtig' || key === 'dringend') params.push(req.body[key] ? 1 : 0);
+        else if (key === 'faellig_am') params.push(berlinDtToUtc(req.body[key]) || null);
         else params.push(req.body[key] ?? null);
       }
     }
@@ -1835,7 +1841,8 @@ app.patch('/todos/:id', async (req, res) => {
     params.push(req.params.id);
     await query(`UPDATE todos SET ${updates.join(', ')} WHERE id = ?`, params);
 
-    const newFaellig = 'faellig_am' in req.body ? req.body.faellig_am : todo.faellig_am;
+    // todo.faellig_am ist bereits UTC (aus DB); req.body.faellig_am ist Berlin-Wandzeit
+    const newFaellig = 'faellig_am' in req.body ? berlinDtToUtc(req.body.faellig_am) : todo.faellig_am;
     const newTitel = 'titel' in req.body ? req.body.titel : todo.titel;
     const newWichtig = 'wichtig' in req.body ? !!req.body.wichtig : !!todo.wichtig;
     const newDringend = 'dringend' in req.body ? !!req.body.dringend : !!todo.dringend;
@@ -1920,7 +1927,7 @@ app.post('/bewerbungen', async (req, res) => {
     const result = await query(
       `INSERT INTO bewerbungen (vorgang_id, name, email, telefon, eingangsdatum, status, naechster_termin, qualifikation, notiz)
        VALUES (?,?,?,?,?,?,?,?,?)`,
-      [vorgang_id, name.trim(), email || null, telefon || null, eingangsdatum || null, st, naechster_termin || null, qualifikation || null, notiz || null]
+      [vorgang_id, name.trim(), email || null, telefon || null, eingangsdatum || null, st, berlinDtToUtc(naechster_termin) || null, qualifikation || null, notiz || null]
     );
     res.json({ id: result.insertId });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -1936,7 +1943,8 @@ app.patch('/bewerbungen/:id', async (req, res) => {
           return res.status(400).json({ error: 'Ungültiger Status' });
         }
         updates.push(`${key} = ?`);
-        params.push(req.body[key] ?? null);
+        const v = req.body[key];
+        params.push(key === 'naechster_termin' ? (berlinDtToUtc(v) || null) : (v ?? null));
       }
     }
     if (!updates.length) return res.json({ ok: true });

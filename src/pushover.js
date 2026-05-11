@@ -121,7 +121,8 @@ export async function pushRocketbookVerarbeitet(titel, vorgangTitel, zusammenfas
 
 export async function pushTerminErinnerung(titel, startTime, location) {
   const dt = new Date(startTime).toLocaleString('de-DE', {
-    weekday: 'short', hour: '2-digit', minute: '2-digit'
+    weekday: 'short', hour: '2-digit', minute: '2-digit',
+    timeZone: 'Europe/Berlin',
   });
   const msg = location ? `${dt} @ ${location}` : dt;
   return push(`◷ Termin in 30 Min.`, `${titel}\n${msg}`, {

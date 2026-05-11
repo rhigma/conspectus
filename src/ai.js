@@ -3,7 +3,7 @@ import { randomUUID, createHash } from 'crypto';
 import { query, queryOne } from './db.js';
 import { getEmailContext, moveToErledigt, moveToVorgangFolder, vorgangFolderPath, verschiebeAnhaengeZuVorgang } from './imap.js';
 import { vorgangOrdner, taskAnlegen } from './nextcloud.js';
-import { createCalDavEvent, deleteCalDavEvent } from './caldav.js';
+import { createCalDavEvent, deleteCalDavEvent, berlinDtToUtc } from './caldav.js';
 import { sendReply } from './smtp.js';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -15,7 +15,8 @@ const MODEL_SMART = process.env.MODEL_SMART || 'claude-sonnet-4-6';
 async function buildSystemPrompt() {
   const now = new Date().toLocaleString('de-DE', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-    hour: '2-digit', minute: '2-digit'
+    hour: '2-digit', minute: '2-digit',
+    timeZone: 'Europe/Berlin',
   });
 
   // Offene Vorgänge
@@ -70,10 +71,11 @@ async function buildSystemPrompt() {
   // Aktive Kalender
   const kalender = await query(`SELECT id, label FROM calendars WHERE active = 1 LIMIT 10`);
 
+  const TZ = { timeZone: 'Europe/Berlin' };
   const vorgangCtx = vorgaenge.length
     ? '\n## Offene Vorgänge\n' + vorgaenge.map(v => {
-        const dl = v.deadline ? ` | Deadline: ${new Date(v.deadline).toLocaleDateString('de-DE')}` : '';
-        const wv = v.wiedervorlage_am ? ` | Wiedervorlage: ${new Date(v.wiedervorlage_am).toLocaleDateString('de-DE')}` : '';
+        const dl = v.deadline ? ` | Deadline: ${new Date(v.deadline).toLocaleDateString('de-DE', TZ)}` : '';
+        const wv = v.wiedervorlage_am ? ` | Wiedervorlage: ${new Date(v.wiedervorlage_am).toLocaleDateString('de-DE', TZ)}` : '';
         const prio = ['', '🔴 Hoch', '🟡 Mittel', '🟢 Niedrig'][v.prioritaet] || '';
         return `- #${v.id} ${prio} **${v.titel}** [${v.status}]${dl}${wv} | ${v.offene_delegationen} offene Delegationen`;
       }).join('\n')
@@ -81,19 +83,19 @@ async function buildSystemPrompt() {
 
   const wvCtx = wiedervorlagen.length
     ? '\n## Wiedervorlage heute\n' + wiedervorlagen.map(v =>
-        `- #${v.id} **${v.titel}** (fällig seit: ${new Date(v.wiedervorlage_am).toLocaleDateString('de-DE')})`
+        `- #${v.id} **${v.titel}** (fällig seit: ${new Date(v.wiedervorlage_am).toLocaleDateString('de-DE', TZ)})`
       ).join('\n')
     : '';
 
   const delegCtx = ueberfaellig.length
     ? '\n## Überfällige Delegationen\n' + ueberfaellig.map(d =>
-        `- ${d.an_name}: "${d.aufgabe}" (Vorgang: ${d.vorgang_titel}, fällig: ${new Date(d.deadline).toLocaleDateString('de-DE')})`
+        `- ${d.an_name}: "${d.aufgabe}" (Vorgang: ${d.vorgang_titel}, fällig: ${new Date(d.deadline).toLocaleDateString('de-DE', TZ)})`
       ).join('\n')
     : '';
 
   const termineCtx = termine.length
     ? '\n## Termine (nächste 7 Tage)\n' + termine.map(t => {
-        const dt = new Date(t.start_time).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
+        const dt = new Date(t.start_time).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Berlin' });
         return `- ${dt}: ${t.title}${t.location ? ' @ ' + t.location : ''}${t.vorgang_titel ? ' [' + t.vorgang_titel + ']' : ''}`;
       }).join('\n')
     : '';
@@ -101,7 +103,7 @@ async function buildSystemPrompt() {
   const todosCtx = offeneTodos.length
     ? '\n## Offene Todos\n' + offeneTodos.map(t => {
         const q = t.wichtig && t.dringend ? 'Sofort' : t.wichtig ? 'Planen' : t.dringend ? 'Delegieren' : 'Eliminieren';
-        const dl = t.faellig_am ? ` | fällig: ${new Date(t.faellig_am).toLocaleDateString('de-DE')}` : '';
+        const dl = t.faellig_am ? ` | fällig: ${new Date(t.faellig_am).toLocaleDateString('de-DE', TZ)}` : '';
         return `- #${t.id} [${q}] **${t.titel}** (${t.vorgang_titel})${dl}`;
       }).join('\n')
     : '';
@@ -353,7 +355,7 @@ ${vorgaenge.map(v => `- #${v.id}: ${v.titel} [${v.typ}]`).join('\n') || 'Keine'}
 E-Mail:
 Von: ${email.from_name || email.from_email}
 Betreff: ${email.subject}
-Datum: ${email.date ? new Date(email.date).toLocaleString('de-DE') : '?'}
+Datum: ${email.date ? new Date(email.date).toLocaleString('de-DE', { timeZone: 'Europe/Berlin' }) : '?'}
 Inhalt: ${(email.body_text || '').slice(0, 800)}${anhaengeBlock}
 
 Antworte NUR mit JSON:
@@ -530,7 +532,7 @@ export async function diktatAnalysieren(transkript, aufgenommenAm = null) {
   );
 
   const kontext = aufgenommenAm
-    ? `Aufgenommen am ${new Date(aufgenommenAm).toLocaleString('de-DE')}.`
+    ? `Aufgenommen am ${new Date(aufgenommenAm).toLocaleString('de-DE', { timeZone: 'Europe/Berlin' })}.`
     : '';
 
   // Haiku hat 200k Kontext — 60k Zeichen Eingabe deckt auch lange Diktate
@@ -600,7 +602,7 @@ export async function vorschlagKandidatenFiltern({
   }
 
   const emailListe = emailKandidaten.map(e => {
-    const dat = e.date ? new Date(e.date).toLocaleDateString('de-DE') : '';
+    const dat = e.date ? new Date(e.date).toLocaleDateString('de-DE', { timeZone: 'Europe/Berlin' }) : '';
     const von = e.from_name || e.from_email || '?';
     const betr = e.subject || '(kein Betreff)';
     const snip = e.body_snippet ? `\n  → ${e.body_snippet.replace(/\s+/g, ' ').slice(0, 200)}` : '';
@@ -608,7 +610,7 @@ export async function vorschlagKandidatenFiltern({
   }).join('\n');
 
   const eventListe = eventKandidaten.map(e => {
-    const dat = e.start_time ? new Date(e.start_time).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }) : '?';
+    const dat = e.start_time ? new Date(e.start_time).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Berlin' }) : '?';
     const ort = e.location ? ` @ ${e.location}` : '';
     return `[Termin #${e.id}] ${dat}: ${e.title || '(ohne Titel)'}${ort}`;
   }).join('\n');
@@ -652,7 +654,7 @@ Antworte NUR mit JSON (keine Erklärung außerhalb):
 
 export async function morgenbriefing() {
   const systemPrompt = await buildSystemPrompt();
-  const heute = new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
+  const heute = new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Berlin' });
 
   const response = await client.messages.create({
     model: MODEL_FAST,
@@ -781,10 +783,11 @@ export async function executeAction(action) {
     case 'todo_anlegen': {
       const wichtig = action.wichtig !== false;
       const dringend = !!action.dringend;
+      const faelligUtc = berlinDtToUtc(action.faellig_am);
       let eventUid = null;
       let eventCalId = null;
 
-      if (action.faellig_am) {
+      if (faelligUtc) {
         const setting = await queryOne("SELECT value FROM settings WHERE `key` = 'todo_calendar_id'");
         const calId = setting?.value ? parseInt(setting.value) : null;
         if (calId) {
@@ -795,7 +798,7 @@ export async function executeAction(action) {
           await createCalDavEvent(calId, {
             uid: eventUid,
             title: `☑ ${action.titel}`,
-            start: action.faellig_am,
+            start: faelligUtc,
             description: action.beschreibung ? `${action.beschreibung}\n[${quadrant}]` : `[${quadrant}]`,
           });
           eventCalId = calId;
@@ -804,7 +807,7 @@ export async function executeAction(action) {
 
       const result = await query(
         'INSERT INTO todos (vorgang_id, titel, beschreibung, faellig_am, wichtig, dringend, event_uid, calendar_id) VALUES (?,?,?,?,?,?,?,?)',
-        [action.vorgang_id, action.titel, action.beschreibung || null, action.faellig_am || null,
+        [action.vorgang_id, action.titel, action.beschreibung || null, faelligUtc || null,
          wichtig ? 1 : 0, dringend ? 1 : 0, eventUid, eventCalId]
       );
       return { done: 'todo_angelegt', id: result.insertId };
@@ -820,6 +823,7 @@ export async function executeAction(action) {
         if (key in action) {
           updates.push(`${key} = ?`);
           if (key === 'wichtig' || key === 'dringend') params.push(action[key] ? 1 : 0);
+          else if (key === 'faellig_am') params.push(berlinDtToUtc(action[key]) || null);
           else params.push(action[key] ?? null);
         }
       }
@@ -827,7 +831,8 @@ export async function executeAction(action) {
       params.push(action.todo_id);
       await query(`UPDATE todos SET ${updates.join(', ')} WHERE id = ?`, params);
 
-      const newFaellig = 'faellig_am' in action ? action.faellig_am : todo.faellig_am;
+      // action.faellig_am ist Berlin-Wandzeit (KI-Format); todo.faellig_am ist bereits UTC
+      const newFaellig = 'faellig_am' in action ? berlinDtToUtc(action.faellig_am) : todo.faellig_am;
       const newTitel = 'titel' in action ? action.titel : todo.titel;
       const newWichtig = 'wichtig' in action ? !!action.wichtig : !!todo.wichtig;
       const newDringend = 'dringend' in action ? !!action.dringend : !!todo.dringend;
@@ -959,16 +964,19 @@ export async function executeAction(action) {
       const calId = action.kalender_id || (await queryOne('SELECT id FROM calendars WHERE active = 1 ORDER BY id ASC LIMIT 1'))?.id;
       if (!calId) return { error: 'kein_kalender' };
       const uid = randomUUID();
+      // KI liefert "YYYY-MM-DDTHH:MM" als Berlin-Wandzeit → in UTC konvertieren
+      const startUtc = berlinDtToUtc(action.start);
+      const endeUtc = berlinDtToUtc(action.ende) || null;
       await createCalDavEvent(calId, {
         uid,
         title: action.titel,
-        start: action.start,
-        end: action.ende || null,
+        start: startUtc,
+        end: endeUtc,
         description: action.beschreibung || null,
       });
       await query(
         'INSERT INTO events (vorgang_id, calendar_id, uid, title, start_time, end_time, location, description) VALUES (?,?,?,?,?,?,?,?)',
-        [action.vorgang_id || null, calId, uid, action.titel, action.start, action.ende || null, action.ort || null, action.beschreibung || null]
+        [action.vorgang_id || null, calId, uid, action.titel, startUtc, endeUtc, action.ort || null, action.beschreibung || null]
       );
       return { done: 'event_angelegt', uid, titel: action.titel };
     }

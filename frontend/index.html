@@ -3160,7 +3160,7 @@ async function editBewerbung(id) {
     document.getElementById('mb-telefon').value = b.telefon || '';
     document.getElementById('mb-eingang').value = b.eingangsdatum ? b.eingangsdatum.slice(0,10) : '';
     document.getElementById('mb-status').value = b.status || 'eingegangen';
-    document.getElementById('mb-termin').value = b.naechster_termin ? b.naechster_termin.slice(0,16) : '';
+    document.getElementById('mb-termin').value = isoToBerlinDtLocal(b.naechster_termin);
     document.getElementById('mb-quali').value = b.qualifikation || '';
     document.getElementById('mb-notiz').value = b.notiz || '';
     document.getElementById('m-bewerbung').style.display = 'flex';
@@ -4263,8 +4263,16 @@ function bgClose(e,id) { if(e.target.classList.contains('modal-bg')) closeM(id);
 // ── UTILS ──────────────────────────────────────────────────────────────────────
 function g(id){ return document.getElementById(id)?.value?.trim()||''; }
 function esc(s){ if(!s)return''; const d=document.createElement('div');d.textContent=String(s);return d.innerHTML; }
-function fmtDate(iso){ if(!iso)return'–';const d=new Date(iso),n=new Date();return d.toDateString()===n.toDateString()?d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}):d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'}); }
-function fmtDateTime(iso){ return iso?new Date(iso).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'–'; }
+function fmtDate(iso){ if(!iso)return'–';const d=new Date(iso),n=new Date();return d.toDateString()===n.toDateString()?d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Berlin'}):d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',timeZone:'Europe/Berlin'}); }
+function fmtDateTime(iso){ return iso?new Date(iso).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:'Europe/Berlin'}):'–'; }
+// "YYYY-MM-DDTHH:MM(:SS)?" UTC oder ISO → "YYYY-MM-DDTHH:MM" Berlin (für <input type="datetime-local">)
+function isoToBerlinDtLocal(iso){
+  if(!iso)return'';
+  const d=new Date(iso);
+  if(isNaN(d.getTime()))return'';
+  const parts=d.toLocaleString('sv-SE',{timeZone:'Europe/Berlin',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+  return parts.replace(' ','T').slice(0,16);
+}
 function autoGrow(el){ el.style.height='auto';el.style.height=Math.min(el.scrollHeight,100)+'px'; }
 let _voiceRec=null;
 function startVoice(){
@@ -4799,7 +4807,7 @@ function renderVorschlagKandidaten(eintragId, data) {
   }
   const tag = (m) => m ? '<span class="ai-tag">✓ KI</span>' : '';
   const eMail = (e) => {
-    const dat = e.date ? new Date(e.date).toLocaleDateString('de-DE') : '';
+    const dat = e.date ? new Date(e.date).toLocaleDateString('de-DE', { timeZone: 'Europe/Berlin' }) : '';
     const von = esc(e.from_name || e.from_email || '?');
     return `<label class="${e.ai_match ? 'ai-match' : ''}">
       <input type="checkbox" data-kand-eintrag="${eintragId}" data-kand-typ="email" data-kand-id="${e.id}" ${e.ai_match ? 'checked' : ''}/>
@@ -4810,7 +4818,7 @@ function renderVorschlagKandidaten(eintragId, data) {
     </label>`;
   };
   const eEvent = (e) => {
-    const dat = e.start_time ? new Date(e.start_time).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }) : '?';
+    const dat = e.start_time ? new Date(e.start_time).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Berlin' }) : '?';
     const ort = e.location ? ` · ${esc(e.location)}` : '';
     return `<label class="${e.ai_match ? 'ai-match' : ''}">
       <input type="checkbox" data-kand-eintrag="${eintragId}" data-kand-typ="event" data-kand-id="${e.id}" ${e.ai_match ? 'checked' : ''}/>

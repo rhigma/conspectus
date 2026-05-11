@@ -13,6 +13,17 @@ export function getPool() {
       waitForConnections: true,
       connectionLimit: 10,
       charset: 'utf8mb4',
+      // Alle DATETIME-Spalten werden als UTC-Wandzeit interpretiert (sowohl Read
+      // als auch Write), unabhängig von der Prozess-Zeitzone. Eingaben aus dem
+      // Frontend (Berlin-Wandzeit) müssen vor INSERT via berlinDtToUtc() konvertiert
+      // werden; Anzeige immer mit timeZone:'Europe/Berlin'.
+      timezone: 'Z',
+    });
+    // MariaDB-Session ebenfalls auf UTC – damit NOW()/CURRENT_TIMESTAMP und
+    // DATE_ADD-Vergleiche konsistent zur UTC-Konvention der Spalten passen,
+    // auch wenn der DB-Server in einer anderen Zeitzone läuft.
+    pool.on('connection', conn => {
+      conn.query("SET time_zone = '+00:00'").catch(() => {});
     });
   }
   return pool;

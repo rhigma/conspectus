@@ -576,7 +576,7 @@ export async function getEmailContext(limitPerAccount = 8) {
     lines.push(`\n## Konto: ${acc.label} <${acc.email}>`);
     for (const e of emails) {
       const u = e.unread ? '[UNGELESEN] ' : '';
-      const d = e.date ? new Date(e.date).toLocaleString('de-DE') : '?';
+      const d = e.date ? new Date(e.date).toLocaleString('de-DE', { timeZone: 'Europe/Berlin' }) : '?';
       const v = e.vorgang_id ? `[Vorgang #${e.vorgang_id}] ` : '[nicht zugeordnet] ';
       const body = e.body_text ? '\n  Inhalt: ' + e.body_text.slice(0, 400).replace(/\n+/g, ' ') : '';
       lines.push(`- #${e.id} ${u}${v}${e.from_name || e.from_email}: "${e.subject}" (${d})${body}`);

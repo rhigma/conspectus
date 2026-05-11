@@ -186,7 +186,7 @@ export async function getCalendarContext(days = 7) {
   const lines = ['\n## Termine (nächste 7 Tage)'];
   for (const ev of events) {
     const dt = ev.start_time
-      ? new Date(ev.start_time).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })
+      ? new Date(ev.start_time).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Berlin' })
       : '?';
     const loc = ev.location ? ` @ ${ev.location}` : '';
     lines.push(`- ${dt}: ${ev.title}${loc} [${ev.cal_label}]`);
@@ -260,6 +260,22 @@ function toIcalBerlin(str) {
     return str.slice(0, 16).replace(/-/g, '').replace(':', '') + '00';
   }
   return formatIcalLocal(new Date(str));
+}
+
+// Frontend-Eingaben aus <input type="datetime-local"> ("YYYY-MM-DDTHH:MM",
+// gemeint als Berlin-Wandzeit) → UTC ISO-String für DB-Insert. Vollständige
+// ISO-Strings (mit Z oder Offset) werden unverändert durchgereicht.
+// DST: März–Oktober = +02:00 (Sommer), sonst +01:00. Diese Näherung deckt
+// alles ab außer der einzigen DST-Umstellungsnacht (02–03 Uhr) — dort werden
+// echte Termine ohnehin nie gelegt.
+export function berlinDtToUtc(str) {
+  if (!str) return null;
+  const m = String(str).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (!m) return str;
+  const month = parseInt(m[2], 10);
+  const offset = (month >= 3 && month <= 10) ? '+02:00' : '+01:00';
+  const sec = m[6] || '00';
+  return new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${sec}${offset}`).toISOString();
 }
 
 // Add exactly one hour to an iCal local time string ("YYYYMMDDTHHMMSS")
