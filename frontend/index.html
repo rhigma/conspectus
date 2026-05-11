@@ -4607,11 +4607,11 @@ function renderBoox() {
         ${vorschlagBanner}
         ${ki.zusammenfassung ? `<h4>Zusammenfassung</h4><div>${esc(ki.zusammenfassung)}</div>` : ''}
         ${audioBlock}
-        ${ki.transkription ? `<h4>Transkription</h4><div class="transkr">${esc(ki.transkription)}</div>` : ''}
+        ${(ki.transkript_original || ki.transkription) ? `<h4>Transkription</h4><div class="transkr">${esc(ki.transkript_original || ki.transkription)}</div>` : ''}
         ${(ki.aufgaben||[]).length ? `<h4>Aufgaben (${offenA} offen)</h4>${(ki.aufgaben||[]).map((a,i)=>renderAufgabe(r.id,i,normVorschlag(a))).join('')}` : ''}
         ${(ki.delegationen||[]).length ? `<h4>Delegationen (${offenD} offen)</h4>${(ki.delegationen||[]).map((d,i)=>renderDelegation(r.id,i,normVorschlag(d))).join('')}` : ''}
         ${(ki.termine||[]).length ? `<h4>Termine (${offenT} offen)</h4>${(ki.termine||[]).map((t,i)=>renderTermin(r.id,i,normVorschlag(t))).join('')}` : ''}
-        ${fehler ? `<h4>Hinweis</h4><div>${esc(fehler)}</div>` : ''}
+        ${fehler && isDiktat ? `<h4>Hinweis</h4><div>${esc(fehler)}</div><button class="boox-btn primary" style="margin-top:8px" onclick="diktatReanalysieren(${r.id})">↻ Neu analysieren</button>` : (fehler ? `<h4>Hinweis</h4><div>${esc(fehler)}</div>` : '')}
         ${r.datei_pfad ? `<h4>${quelldateiLabel}</h4><div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink3);word-break:break-all">${esc(r.datei_pfad)}</div>` : ''}
       </div>` : '';
 
@@ -4756,6 +4756,22 @@ async function booxReset(eintragId, typ, index) {
     await req('POST', `/boox/${eintragId}/reset`, { typ, index });
     await loadBoox();
   } catch(e) {
+    toast('Fehler: ' + e.message, 'error');
+  }
+}
+
+async function diktatReanalysieren(eintragId) {
+  if (!confirm('Diktat erneut analysieren? Bestehende Vorschläge werden ersetzt.')) return;
+  try {
+    toast('Analyse läuft…');
+    const r = await req('POST', `/eintraege/${eintragId}/reanalyse`);
+    if (r.fehler) {
+      toast('Erneut fehlgeschlagen: ' + r.fehler, 'error');
+    } else {
+      toast(`✓ ${r.vorschlaege} Vorschläge`);
+    }
+    await loadBoox();
+  } catch (e) {
     toast('Fehler: ' + e.message, 'error');
   }
 }

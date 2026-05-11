@@ -514,7 +514,6 @@ export async function diktatAnalysieren(transkript, aufgenommenAm = null) {
   const text = (transkript || '').trim();
   if (!text) {
     return {
-      transkription: '',
       vorgang_id: null,
       vorgang_titel: null,
       aufgaben: [],
@@ -534,6 +533,9 @@ export async function diktatAnalysieren(transkript, aufgenommenAm = null) {
     ? `Aufgenommen am ${new Date(aufgenommenAm).toLocaleString('de-DE')}.`
     : '';
 
+  // Haiku hat 200k Kontext — 60k Zeichen Eingabe deckt auch lange Diktate
+  // (45+ Min Sprechzeit) komplett ab. Das Transkript wird im Eintrag separat
+  // gespeichert; die KI muss es nicht zurückliefern.
   const prompt = `Du analysierst ein Diktat des Schulleiters (per Plaud-Diktiergerät aufgenommen, automatisch transkribiert). ${kontext}
 
 Bestehende Vorgänge:
@@ -541,17 +543,16 @@ ${vorgaenge.map(v => `- #${v.id}: ${v.titel}`).join('\n') || 'Keine'}
 
 Transkript:
 """
-${text.slice(0, 12000)}
+${text.slice(0, 60000)}
 """
 
 Bitte:
-1. Bereinige das Transkript leicht (Füllwörter, Versprecher), aber bewahre Inhalt und Tonfall. Nichts hinzudichten.
-2. Erkenne, zu welchem Vorgang das Diktat gehört (oder ob ein neuer Vorgang anzulegen ist).
-3. Extrahiere klar: Aufgaben (für mich), Delegationen (an andere), Termine.
+1. Erkenne, zu welchem Vorgang das Diktat gehört (oder ob ein neuer Vorgang anzulegen ist).
+2. Extrahiere klar: Aufgaben (für mich), Delegationen (an andere), Termine.
+3. Schreibe eine knappe Zusammenfassung (2–4 Sätze).
 
-Antworte NUR mit JSON:
+Antworte NUR mit JSON, keinerlei Text davor oder dahinter:
 {
-  "transkription": "...",
   "vorgang_id": null,
   "vorgang_titel": "...",
   "aufgaben": [{"titel":"...","wichtig":1,"dringend":0,"faellig_am":null}],
@@ -562,7 +563,7 @@ Antworte NUR mit JSON:
 
   const response = await client.messages.create({
     model: MODEL_FAST,
-    max_tokens: 2500,
+    max_tokens: 4000,
     messages: [{ role: 'user', content: prompt }],
   });
 
@@ -572,7 +573,6 @@ Antworte NUR mit JSON:
     return parsed;
   } catch (e) {
     return {
-      transkription: text,
       vorgang_id: null,
       vorgang_titel: null,
       aufgaben: [],

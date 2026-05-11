@@ -107,9 +107,12 @@ export async function diktatVerarbeiten({
     }
   }
 
-  // 4) Eintrag schreiben
+  // 4) Eintrag schreiben.
+  //    transkript_original immer mitspeichern, damit Reanalyse zuverlässig
+  //    auf den Rohtext greifen kann (unabhängig von Erfolg/Fehler der KI).
   const inhalt = {
     ...neueVorschlaege,
+    transkript_original: transkript,
     aufgenommen_am: aufgenommenAm || null,
     dauer_sekunden: dauerSekunden || null,
     audio_pfad: audioPfad,

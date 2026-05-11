@@ -7,7 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initSchema, query, queryOne } from './db.js';
 import { syncAllAccounts, moveToErledigt, syncErledigtStatus, vorgangFolderPath, renameVorgangFolderOnAllAccounts } from './imap.js';
-import { chat, executeAction, getTokenStats, emailEinordnen, notizAnalysieren, morgenbriefing, naturalSearchQuery, vorschlagKandidatenFiltern } from './ai.js';
+import { chat, executeAction, getTokenStats, emailEinordnen, notizAnalysieren, morgenbriefing, naturalSearchQuery, vorschlagKandidatenFiltern, diktatAnalysieren } from './ai.js';
 import { ncMkdir, ncUpload, neueBooxNotizen, booxVerarbeitet, ncDownload, vorgangOrdner, defaultZielOrdner, ncOrdnerExistiert, moveEmailAnhaengeZuVorgang, NC_BASIS, NC_VORGAENGE_BASIS, NC_EMAIL_ANHAENGE_BASIS, BOOX_PFAD, BOOX_VERARBEITET } from './nextcloud.js';
 import { createCalDavEvent, deleteCalDavEvent } from './caldav.js';
 import { diktatVerarbeiten } from './diktate.js';
@@ -1251,6 +1251,83 @@ app.post('/diktate', async (req, res) => {
     });
   } catch (e) {
     console.error('[Diktat] Webhook-Fehler:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Diktat neu analysieren (z.B. nach JSON-Parse-Fehler).
+// Nutzt das gespeicherte Original-Transkript und ruft diktatAnalysieren()
+// erneut auf. Erfolgreich übernommene Vorschläge bleiben erhalten; nur die
+// noch offenen Items werden ersetzt.
+app.post('/eintraege/:eintragId/reanalyse', async (req, res) => {
+  try {
+    const eintragId = parseInt(req.params.eintragId);
+    const row = await queryOne(
+      `SELECT id, vorgang_id, titel, inhalt FROM vorgang_eintraege
+       WHERE id = ? AND titel LIKE 'Diktat:%'`,
+      [eintragId]
+    );
+    if (!row) return res.status(404).json({ error: 'Diktat-Eintrag nicht gefunden' });
+
+    let inhalt;
+    try { inhalt = JSON.parse(row.inhalt); }
+    catch { return res.status(500).json({ error: 'Eintrag-JSON kaputt' }); }
+
+    const transkript = inhalt.transkript_original || inhalt.transkription || '';
+    if (!transkript.trim()) {
+      return res.status(400).json({ error: 'Kein Transkript zum Reanalysieren vorhanden' });
+    }
+
+    // Schutz: bereits übernommene Items dürfen nicht verloren gehen.
+    const hatUebernommen = ['aufgaben', 'delegationen', 'termine'].some(k =>
+      (inhalt[k] || []).some(it => it?.status === 'uebernommen')
+    );
+    if (hatUebernommen) {
+      return res.status(409).json({
+        error: 'Reanalyse blockiert: es wurden bereits Vorschläge übernommen. ' +
+               'Bitte zuerst zurücksetzen oder den Eintrag manuell bearbeiten.'
+      });
+    }
+
+    const analyse = await diktatAnalysieren(transkript, inhalt.aufgenommen_am);
+    const normItem = (extra = {}) => ({ status: 'offen', ref_id: null, ...extra });
+    const aufgaben = (analyse.aufgaben || []).map(a => typeof a === 'string' ? normItem({ titel: a }) : normItem(a));
+    const delegationen = (analyse.delegationen || []).map(d => normItem(d));
+    const termine = (analyse.termine || []).map(t => normItem(t));
+
+    // Vorgang-Vorschlag neu prüfen, wenn die KI einen Titel liefert und der
+    // Eintrag aktuell im Sammelvorgang oder ohne explizite Zuordnung hängt.
+    let vorgangVorschlag = inhalt.vorgang_vorschlag || null;
+    if (analyse.vorgang_titel) {
+      const vorhanden = await queryOne(
+        'SELECT id FROM vorgaenge WHERE titel LIKE ? LIMIT 1',
+        [`%${analyse.vorgang_titel}%`]
+      );
+      vorgangVorschlag = vorhanden ? null : analyse.vorgang_titel;
+    }
+
+    const neuInhalt = {
+      ...inhalt,
+      aufgaben,
+      delegationen,
+      termine,
+      zusammenfassung: analyse.zusammenfassung || '',
+      vorgang_vorschlag: vorgangVorschlag,
+    };
+    delete neuInhalt.fehler;
+
+    await query(
+      'UPDATE vorgang_eintraege SET inhalt = ? WHERE id = ?',
+      [JSON.stringify(neuInhalt), eintragId]
+    );
+
+    res.json({
+      ok: true,
+      vorschlaege: aufgaben.length + delegationen.length + termine.length,
+      fehler: analyse.fehler || null,
+    });
+  } catch (e) {
+    console.error('[Reanalyse] Fehler:', e);
     res.status(500).json({ error: e.message });
   }
 });
