@@ -115,6 +115,8 @@ export async function initSchema() {
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
   `);
   // Migration für bestehende Instanzen
+  await db.execute(`ALTER TABLE bewerbungen ADD COLUMN IF NOT EXISTS event_uid VARCHAR(255)`);
+  await db.execute(`ALTER TABLE bewerbungen ADD COLUMN IF NOT EXISTS calendar_id INT`);
   await db.execute(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS erledigt TINYINT NOT NULL DEFAULT 0`);
   await db.execute(`ALTER TABLE vorgaenge ADD COLUMN IF NOT EXISTS wiedervorlage_am DATE`);
   await db.execute(`ALTER TABLE vorgaenge ADD COLUMN IF NOT EXISTS imap_folder VARCHAR(500)`);
@@ -241,6 +243,8 @@ export async function initSchema() {
       naechster_termin DATETIME,
       qualifikation   VARCHAR(255),
       notiz           TEXT,
+      event_uid       VARCHAR(255),
+      calendar_id     INT,
       created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       FOREIGN KEY (vorgang_id) REFERENCES vorgaenge(id) ON DELETE CASCADE

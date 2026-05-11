@@ -1900,6 +1900,42 @@ app.delete('/todos/:id', async (req, res) => {
 
 // ── BEWERBUNGEN ───────────────────────────────────────────────────────────────
 const BEWERBUNG_STATUS = ['eingegangen','gesichtet','eingeladen','interview','zusage','absage','zurueckgezogen','eingestellt'];
+const BEWERBUNG_STATUS_LABEL = {
+  eingegangen: 'Eingegangen', gesichtet: 'Gesichtet', eingeladen: 'Eingeladen',
+  interview: 'Interview', zusage: 'Zusage', absage: 'Absage',
+  zurueckgezogen: 'Zurückgezogen', eingestellt: 'Eingestellt',
+};
+
+// Baut Titel + Description für den Kalendereintrag einer Bewerbung.
+function bewerbungEventInhalt(b, vorgangTitel) {
+  const titel = `👤 Bewerbung ${b.name}`;
+  const zeilen = [];
+  if (b.status)        zeilen.push(`Status: ${BEWERBUNG_STATUS_LABEL[b.status] || b.status}`);
+  if (b.qualifikation) zeilen.push(`Qualifikation: ${b.qualifikation}`);
+  if (b.telefon)       zeilen.push(`Tel: ${b.telefon}`);
+  if (b.email)         zeilen.push(`E-Mail: ${b.email}`);
+  if (vorgangTitel)    zeilen.push(`Vorgang: ${vorgangTitel}`);
+  if (b.notiz)         zeilen.push('', b.notiz);
+  return { titel, beschreibung: zeilen.join('\n') };
+}
+
+// Legt/erneuert/entfernt den CalDAV-Event einer Bewerbung. Liefert {event_uid, calendar_id}
+// für ein anschließendes UPDATE der Spalten (null/null wenn kein Event existieren soll).
+async function syncBewerbungEvent({ b, vorgangTitel, oldUid, oldCalId }) {
+  if (oldUid && oldCalId) {
+    await deleteCalDavEvent(oldCalId, oldUid).catch(() => {});
+  }
+  if (!b.naechster_termin) return { event_uid: null, calendar_id: null };
+  const setting = await queryOne("SELECT value FROM settings WHERE `key` = 'todo_calendar_id'");
+  const calId = setting?.value ? parseInt(setting.value) : null;
+  if (!calId) return { event_uid: null, calendar_id: null };
+  const { titel, beschreibung } = bewerbungEventInhalt(b, vorgangTitel);
+  const uid = randomUUID();
+  await createCalDavEvent(calId, {
+    uid, title: titel, start: b.naechster_termin, description: beschreibung,
+  });
+  return { event_uid: uid, calendar_id: calId };
+}
 
 app.get('/bewerbungen', async (req, res) => {
   try {
@@ -1924,11 +1960,23 @@ app.post('/bewerbungen', async (req, res) => {
     const { vorgang_id, name, email, telefon, eingangsdatum, status, naechster_termin, qualifikation, notiz } = req.body;
     if (!vorgang_id || !name?.trim()) return res.status(400).json({ error: 'vorgang_id und name sind Pflicht' });
     const st = status && BEWERBUNG_STATUS.includes(status) ? status : 'eingegangen';
+    const terminUtc = berlinDtToUtc(naechster_termin) || null;
     const result = await query(
       `INSERT INTO bewerbungen (vorgang_id, name, email, telefon, eingangsdatum, status, naechster_termin, qualifikation, notiz)
        VALUES (?,?,?,?,?,?,?,?,?)`,
-      [vorgang_id, name.trim(), email || null, telefon || null, eingangsdatum || null, st, berlinDtToUtc(naechster_termin) || null, qualifikation || null, notiz || null]
+      [vorgang_id, name.trim(), email || null, telefon || null, eingangsdatum || null, st, terminUtc, qualifikation || null, notiz || null]
     );
+    if (terminUtc) {
+      const vorgang = await queryOne('SELECT titel FROM vorgaenge WHERE id = ?', [vorgang_id]);
+      const { event_uid, calendar_id } = await syncBewerbungEvent({
+        b: { name: name.trim(), email, telefon, status: st, qualifikation, notiz, naechster_termin: terminUtc },
+        vorgangTitel: vorgang?.titel,
+      });
+      if (event_uid) {
+        await query('UPDATE bewerbungen SET event_uid = ?, calendar_id = ? WHERE id = ?',
+          [event_uid, calendar_id, result.insertId]);
+      }
+    }
     res.json({ id: result.insertId });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -1950,12 +1998,35 @@ app.patch('/bewerbungen/:id', async (req, res) => {
     if (!updates.length) return res.json({ ok: true });
     params.push(req.params.id);
     await query(`UPDATE bewerbungen SET ${updates.join(', ')} WHERE id = ?`, params);
+
+    // Kalender-Event synchron halten: bei Änderung eines relevanten Felds neu erzeugen.
+    // (Termin, Name, Status, Qualifikation, Kontakt oder Notiz ändert den Event-Inhalt.)
+    const relevant = ['naechster_termin','name','status','qualifikation','telefon','email','notiz'];
+    if (relevant.some(k => k in req.body)) {
+      const b = await queryOne(
+        `SELECT b.*, v.titel AS vorgang_titel
+         FROM bewerbungen b JOIN vorgaenge v ON v.id = b.vorgang_id
+         WHERE b.id = ?`,
+        [req.params.id]
+      );
+      if (b) {
+        const { event_uid, calendar_id } = await syncBewerbungEvent({
+          b, vorgangTitel: b.vorgang_titel, oldUid: b.event_uid, oldCalId: b.calendar_id,
+        });
+        await query('UPDATE bewerbungen SET event_uid = ?, calendar_id = ? WHERE id = ?',
+          [event_uid, calendar_id, req.params.id]);
+      }
+    }
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.delete('/bewerbungen/:id', async (req, res) => {
   try {
+    const b = await queryOne('SELECT event_uid, calendar_id FROM bewerbungen WHERE id = ?', [req.params.id]);
+    if (b?.event_uid && b?.calendar_id) {
+      await deleteCalDavEvent(b.calendar_id, b.event_uid).catch(() => {});
+    }
     await query('DELETE FROM bewerbungen WHERE id = ?', [req.params.id]);
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
